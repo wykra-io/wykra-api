@@ -6,6 +6,4 @@ export default registerAs('app', () => ({
   host: env.APP_HOST,
   port: env.APP_PORT,
   globalPrefix: env.APP_GLOBAL_PREFIX,
-  secretKey: env.APP_SECRET_KEY,
 }));
-

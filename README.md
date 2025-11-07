@@ -36,7 +36,6 @@ cp .env.example .env
 - `APP_HOST` - Application host
 - `APP_PORT` - Application port
 - `APP_GLOBAL_PREFIX` - API prefix
-- `APP_SECRET_KEY` - Secret key for encryption
 - `DB_HOST` - Database host
 - `DB_PORT` - Database port
 - `DB_USERNAME` - Database username

@@ -28,9 +28,5 @@ export class AppConfigService {
   public get globalPrefix(): string {
     return this.config.get<string>('app.globalPrefix', 'api/v1');
   }
-
-  public get secretKey(): string {
-    return this.config.getOrThrow<string>('app.secretKey');
-  }
 }
 
