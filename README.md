@@ -7,6 +7,7 @@ Originally built as a [hackathon prototype](http://dev.to/olgabraginskaya/wykra-
 ## Why
 
 Discovery shouldn’t mean ten open tabs, half-broken spreadsheets, and guessing which voices actually matter.
+
 Our goals:
 
 - Make discovery transparent, not a black box.
@@ -32,7 +33,7 @@ Our goals:
 
 ## Getting started
 
-We are building everything in the open from the first commit. If documentation is missing or unclear, open an issue or ping us—we would rather answer questions than ship guesswork.
+We are building everything in the open from the first commit. If documentation is missing or unclear, open an issue or ping us. We would rather answer questions than ship guesswork.
 
 ### Bright Data setup
 
