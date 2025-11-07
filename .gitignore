@@ -1,31 +1,82 @@
-# Built things
-_Debug/
-Compiled/
+# compiled output
+/dist
+/node_modules
+/build
 
-# AudioCache can be rebuilt from sources
-AudioCache/
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Lockfile
-_OpenInEditor.lock
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
 
-# User settings
-Game.agf.user
-*.crm.user
+# Tests
+/coverage
+/.nyc_output
+*.test.js.snap
 
-# Backups
-Game.agf.bak
-backup_acsprset.spr
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+.vscode/*
+!vscode/settings.json
+!vscode/tasks.json
+!vscode/launch.json
+!vscode/extensions.json
 
-# Memory dumps
-*.dmp
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
+
+# TypeScript
+*.tsbuildinfo
+*.d.ts.map
+
+# NestJS
+dist/
+.nest/
+
+# Docker
+.dockerignore
 
 # Temporary files
-# temporarily created during sprite or room background compression
-~aclzw.tmp
-# temporary, main game data, before getting packed into exe
-game28.dta
-# temporary build of the game before being moved to Compiled/ folder
-*.exe
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
 
-# Log files
-warnings.log
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# Misc
+.eslintcache
+.prettierignore
+*.pid
+*.seed
+*.pid.lock

@@ -1,0 +1,29 @@
+import { Module } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
+
+import { AppConfigModule } from '@libs/config';
+import { SentryClientModule } from '@libs/sentry';
+
+import { AppController } from './app.controller';
+import { InstagramModule } from '../instagram';
+
+@Module({
+  imports: [
+    AppConfigModule,
+    EventEmitterModule.forRoot(),
+    InstagramModule,
+    SentryClientModule,
+    SentryModule.forRoot(),
+  ],
+  controllers: [AppController],
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: SentryGlobalFilter,
+    },
+  ],
+})
+export class AppModule {}
+
