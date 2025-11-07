@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      APP_HOST: ${APP_HOST:-0.0.0.0}
+      APP_HOST: 0.0.0.0
       APP_PORT: ${APP_PORT:-3000}
       APP_GLOBAL_PREFIX: ${APP_GLOBAL_PREFIX:-api/v1}
       DB_HOST: postgres
@@ -72,7 +72,7 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
       OPENROUTER_TIMEOUT: ${OPENROUTER_TIMEOUT:-60000}
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "${APP_PORT:-3000}:${APP_PORT:-3000}"
     depends_on:
       postgres:
         condition: service_healthy
