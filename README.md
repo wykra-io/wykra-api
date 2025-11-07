@@ -125,6 +125,17 @@ docker-compose exec api npm run migration:run
 
 </details>
 
+### Try the API
+
+Once the server is running (locally or via Docker), you can hit the analysis endpoint in two ways:
+
+- **Browser**: open `http://localhost:3011/api/v1/instagram/analysis?profile=<profile_name>` to view the JSON response. A short video walkthrough is coming soon.
+- **cURL**:
+  ```bash
+  curl "http://localhost:3011/api/v1/instagram/analysis?profile=<profile_name>"
+  ```
+  Replace `<profile_name>` with the Instagram handle you want to inspect.
+
 ### Environment variables
 
 Required core config:
