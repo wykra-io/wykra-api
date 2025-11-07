@@ -60,10 +60,7 @@ export class InstagramService {
     try {
       this.logger.log(`Starting analysis for Instagram profile: ${profile}`);
 
-      // TODO: Call third-party Instagram API here
       const profileData = await this.fetchProfileData(profile);
-
-      // TODO: Process results using LLM with LangChain
       const analysis = await this.processWithLLM(profileData);
 
       return {
