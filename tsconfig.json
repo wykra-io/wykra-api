@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": false,
+    "esModuleInterop": true,
+    "paths": {
+      "@libs/config": ["libs/config/src"],
+      "@libs/config/*": ["libs/config/src/*"],
+      "@libs/entities": ["libs/entities/src"],
+      "@libs/entities/*": ["libs/entities/src/*"],
+      "@libs/repositories": ["libs/repositories/src"],
+      "@libs/repositories/*": ["libs/repositories/src/*"],
+      "@libs/exceptions": ["libs/exceptions/src"],
+      "@libs/exceptions/*": ["libs/exceptions/src/*"],
+      "@libs/interfaces": ["libs/interfaces/src"],
+      "@libs/interfaces/*": ["libs/interfaces/src/*"],
+      "@libs/utils": ["libs/utils/src"],
+      "@libs/utils/*": ["libs/utils/src/*"],
+      "@libs/sentry": ["libs/sentry/src"],
+      "@libs/sentry/*": ["libs/sentry/src/*"],
+      "@libs/interceptors": ["libs/interceptors/src"],
+      "@libs/interceptors/*": ["libs/interceptors/src/*"]
+    }
+  }
+}
+
