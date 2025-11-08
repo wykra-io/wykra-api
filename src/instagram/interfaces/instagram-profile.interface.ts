@@ -1,4 +1,4 @@
-import { InstagramAnalysisResult } from "./instagram-analysis.interface";
+import { InstagramAnalysisResult } from './instagram-analysis.interface';
 
 /**
  * Location information for Instagram posts
@@ -21,7 +21,7 @@ export interface InstagramPost {
   image_url: string | null;
   likes: number;
   location: InstagramPostLocation | null;
-  content_type: "Video" | "Carousel" | "Photo";
+  content_type: 'Video' | 'Carousel' | 'Photo';
   url: string;
   video_url: string | null;
   is_pinned: boolean;

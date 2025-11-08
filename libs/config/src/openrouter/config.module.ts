@@ -1,8 +1,8 @@
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 
-import { OpenrouterConfigService } from "./config.service";
-import openrouterConfiguration from "./configuration";
+import { OpenrouterConfigService } from './config.service';
+import openrouterConfiguration from './configuration';
 
 @Module({
   imports: [

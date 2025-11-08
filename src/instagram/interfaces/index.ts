@@ -1,3 +1,3 @@
-export * from "./instagram-analysis.interface";
-export * from "./instagram-profile.interface";
+export * from './instagram-analysis.interface';
+export * from './instagram-profile.interface';
 

@@ -1,10 +1,10 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Controller, Get, Query } from '@nestjs/common';
 
-import { InstagramAnalysisDTO } from "./dto/instagram-analysis.dto";
-import { InstagramAnalysisData } from "./interfaces";
-import { InstagramService } from "./instagram.service";
+import { InstagramAnalysisDTO } from './dto/instagram-analysis.dto';
+import { InstagramAnalysisData } from './interfaces';
+import { InstagramService } from './instagram.service';
 
-@Controller("instagram")
+@Controller('instagram')
 export class InstagramController {
   constructor(private readonly instagramService: InstagramService) {}
 
@@ -15,7 +15,7 @@ export class InstagramController {
    *
    * @returns {Promise<InstagramAnalysisData>} Analysis results processed by LLM.
    */
-  @Get("analysis")
+  @Get('analysis')
   public async analyzeProfile(
     @Query() query: InstagramAnalysisDTO,
   ): Promise<InstagramAnalysisData> {

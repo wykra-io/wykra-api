@@ -1,16 +1,20 @@
-import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage } from "@langchain/core/messages";
-import { Injectable, Logger } from "@nestjs/common";
-import axios, { AxiosInstance, AxiosError } from "axios";
+import { ChatOpenAI } from '@langchain/openai';
+import { HumanMessage } from '@langchain/core/messages';
+import { Injectable, Logger } from '@nestjs/common';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
-import { BrightdataConfigService, OpenrouterConfigService } from "@libs/config";
-import { SentryClientService } from "@libs/sentry";
+import {
+  BrightdataConfigService,
+  BrightdataDataset,
+  OpenrouterConfigService,
+} from '@libs/config';
+import { SentryClientService } from '@libs/sentry';
 
 import {
   InstagramAnalysisData,
   InstagramAnalysisResult,
   InstagramProfile,
-} from "./interfaces";
+} from './interfaces';
 
 @Injectable()
 export class InstagramService {
@@ -28,7 +32,7 @@ export class InstagramService {
       timeout: this.brightdataConfig.timeout,
       headers: {
         Authorization: `Bearer ${this.brightdataConfig.apiKey}`,
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
     });
 
@@ -39,8 +43,8 @@ export class InstagramService {
       configuration: {
         baseURL: this.openrouterConfig.baseUrl,
         defaultHeaders: {
-          "HTTP-Referer": "https://wykra-api.com",
-          "X-Title": "Wykra API",
+          'HTTP-Referer': 'https://wykra-api.com',
+          'X-Title': 'Wykra API',
         },
       },
       temperature: 0,
@@ -89,7 +93,7 @@ export class InstagramService {
 
       // BrightData Instagram scraper API endpoint
       const endpoint = `/datasets/v3/scrape`;
-      const datasetId = this.brightdataConfig.datasetId;
+      const datasetId = BrightdataDataset.INSTAGRAM;
 
       // Request body structure as per BrightData API
       const requestBody = {
@@ -99,10 +103,10 @@ export class InstagramService {
       // Query parameters
       const params = {
         dataset_id: datasetId,
-        notify: "false",
-        include_errors: "true",
-        type: "discover_new",
-        discover_by: "user_name",
+        notify: 'false',
+        include_errors: 'true',
+        type: 'discover_new',
+        discover_by: 'user_name',
       };
 
       const response = await this.httpClient.post<unknown>(
@@ -121,12 +125,12 @@ export class InstagramService {
       }
 
       // If it's a single object, return it directly
-      if (response.data && typeof response.data === "object") {
+      if (response.data && typeof response.data === 'object') {
         return response.data as InstagramProfile;
       }
 
       throw new Error(
-        "Unexpected response format from BrightData API. Expected array with profile data or single profile object.",
+        'Unexpected response format from BrightData API. Expected array with profile data or single profile object.',
       );
     } catch (error) {
       const axiosError = error as AxiosError;
@@ -151,7 +155,7 @@ export class InstagramService {
           `No response from BrightData API for profile ${profile}`,
         );
 
-        throw new Error("No response from Instagram scraper API");
+        throw new Error('No response from Instagram scraper API');
       } else {
         // Error setting up the request
         this.logger.error(
@@ -177,14 +181,14 @@ export class InstagramService {
     profileData: InstagramProfile,
   ): Promise<InstagramAnalysisResult> {
     try {
-      this.logger.log("Processing profile data with OpenRouter LLM");
+      this.logger.log('Processing profile data with OpenRouter LLM');
 
       // Check if profile is private or data is unsuitable
       if (profileData.is_private) {
         return {
-          summary: "Profile is private. Cannot analyze private profiles.",
+          summary: 'Profile is private. Cannot analyze private profiles.',
           qualityScore: 0,
-          message: "Profile is private and cannot be analyzed.",
+          message: 'Profile is private and cannot be analyzed.',
         };
       }
 
@@ -196,9 +200,9 @@ export class InstagramService {
       ) {
         return {
           summary:
-            "Insufficient data available for analysis. Profile may be new or have limited activity.",
+            'Insufficient data available for analysis. Profile may be new or have limited activity.',
           qualityScore: 0,
-          message: "Data is not suitable for evaluation.",
+          message: 'Data is not suitable for evaluation.',
         };
       }
 
@@ -218,7 +222,7 @@ export class InstagramService {
           likes: post.likes || 0,
           comments: post.comments || 0,
           content_type: post.content_type,
-          hashtags: this.extractHashtags((post.caption as string) || ""),
+          hashtags: this.extractHashtags((post.caption as string) || ''),
         })),
       };
 
@@ -226,28 +230,28 @@ export class InstagramService {
       const prompt = `Analyze this Instagram influencer profile data and provide a detailed analysis.
 
 Profile Data:
-- Account: ${analysisData.account || "Unknown"}
-- Profile Name: ${analysisData.profile_name || "Unknown"}
+- Account: ${analysisData.account || 'Unknown'}
+- Profile Name: ${analysisData.profile_name || 'Unknown'}
 - Followers: ${(analysisData.followers || 0).toLocaleString()}
 - Posts Count: ${analysisData.posts_count || 0}
 - Average Engagement Rate: ${((analysisData.avg_engagement || 0) * 100).toFixed(2)}%
-- Biography: ${analysisData.biography || "No biography"}
-- Verified: ${analysisData.is_verified ? "Yes" : "No"}
-- Business Account: ${analysisData.is_business_account ? "Yes" : "No"}
-- Professional Account: ${analysisData.is_professional_account ? "Yes" : "No"}
+- Biography: ${analysisData.biography || 'No biography'}
+- Verified: ${analysisData.is_verified ? 'Yes' : 'No'}
+- Business Account: ${analysisData.is_business_account ? 'Yes' : 'No'}
+- Professional Account: ${analysisData.is_professional_account ? 'Yes' : 'No'}
 
 Recent Posts Sample:
 ${analysisData.posts
   .map(
     (post, idx) => `
 Post ${idx + 1}:
-- Caption: ${post.caption?.substring(0, 200) || "No caption"}
+- Caption: ${post.caption?.substring(0, 200) || 'No caption'}
 - Likes: ${(post.likes || 0).toLocaleString()}
 - Comments: ${(post.comments || 0).toLocaleString()}
-- Type: ${post.content_type || "Unknown"}
-- Hashtags: ${post.hashtags?.join(", ") || "None"}`,
+- Type: ${post.content_type || 'Unknown'}
+- Hashtags: ${post.hashtags?.join(', ') || 'None'}`,
   )
-  .join("\n")}
+  .join('\n')}
 
 Please analyze this profile and provide a comprehensive analysis covering:
 
@@ -262,17 +266,17 @@ Please analyze this profile and provide a comprehensive analysis covering:
 
 Return your analysis as a JSON object with the following structure:
 {
-  "summary": "A comprehensive 2-3 paragraph summary of the profile analysis",
-  "qualityScore": <number from 1 to 5>,
-  "topic": "<main topic/niche>",
-  "niche": "<specific niche if applicable>",
-  "sponsoredFrequency": "<low/medium/high>",
-  "contentAuthenticity": "<authentic/artificial/mixed>",
-  "followerAuthenticity": "<likely real/likely fake/mixed>",
-  "visibleBrands": ["<brand1>", "<brand2>", ...],
-  "engagementStrength": "<weak/moderate/strong>",
-  "postsAnalysis": "<detailed analysis of posts>",
-  "hashtagsStatistics": "<analysis of hashtag usage>"
+  'summary': 'A comprehensive 2-3 paragraph summary of the profile analysis',
+  'qualityScore': <number from 1 to 5>,
+  'topic': '<main topic/niche>',
+  'niche': '<specific niche if applicable>',
+  'sponsoredFrequency': '<low/medium/high>',
+  'contentAuthenticity': '<authentic/artificial/mixed>',
+  'followerAuthenticity': '<likely real/likely fake/mixed>',
+  'visibleBrands': ['<brand1>', '<brand2>', ...],
+  'engagementStrength': '<weak/moderate/strong>',
+  'postsAnalysis': '<detailed analysis of posts>',
+  'hashtagsStatistics': '<analysis of hashtag usage>'
 }
 
 Quality Score Guidelines:
@@ -312,14 +316,14 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
 
         // Ensure required fields
         if (!analysis.summary) {
-          analysis.summary = "Analysis completed but summary not provided.";
+          analysis.summary = 'Analysis completed but summary not provided.';
         }
         if (!analysis.qualityScore) {
           analysis.qualityScore = 3;
         }
       } catch (parseError) {
         this.logger.warn(
-          "Failed to parse LLM response as JSON, using fallback analysis",
+          'Failed to parse LLM response as JSON, using fallback analysis',
           parseError,
         );
 
@@ -329,17 +333,17 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
         const qualityScore = engagementOk && postsOk ? 3 : 2;
 
         analysis = {
-          summary: `Profile analysis for ${analysisData.account || "Unknown"}. ${(analysisData.followers || 0).toLocaleString()} followers, ${analysisData.posts_count || 0} posts, ${((analysisData.avg_engagement || 0) * 100).toFixed(2)}% average engagement rate.`,
+          summary: `Profile analysis for ${analysisData.account || 'Unknown'}. ${(analysisData.followers || 0).toLocaleString()} followers, ${analysisData.posts_count || 0} posts, ${((analysisData.avg_engagement || 0) * 100).toFixed(2)}% average engagement rate.`,
           qualityScore,
-          topic: "Unable to determine from available data",
-          engagementStrength: engagementOk ? "moderate" : "weak",
-          message: "LLM response parsing failed, using basic analysis.",
+          topic: 'Unable to determine from available data',
+          engagementStrength: engagementOk ? 'moderate' : 'weak',
+          message: 'LLM response parsing failed, using basic analysis.',
         };
       }
 
       return analysis;
     } catch (error) {
-      this.logger.error("Error processing profile with LLM:", error);
+      this.logger.error('Error processing profile with LLM:', error);
       this.sentry.sendException(error);
 
       // Fallback analysis if LLM fails
@@ -348,10 +352,10 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
       const qualityScore = engagementOk && postsOk ? 3 : 2;
 
       return {
-        summary: `Basic analysis for ${profileData.account || "Unknown"}. Profile has ${(profileData.followers || 0).toLocaleString()} followers and ${profileData.posts_count || 0} posts.`,
+        summary: `Basic analysis for ${profileData.account || 'Unknown'}. Profile has ${(profileData.followers || 0).toLocaleString()} followers and ${profileData.posts_count || 0} posts.`,
         qualityScore,
-        engagementStrength: engagementOk ? "moderate" : "weak",
-        message: "LLM analysis failed, using fallback analysis.",
+        engagementStrength: engagementOk ? 'moderate' : 'weak',
+        message: 'LLM analysis failed, using fallback analysis.',
       };
     }
   }

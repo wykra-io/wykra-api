@@ -1,11 +1,10 @@
-import { registerAs } from "@nestjs/config";
-import { env } from "node:process";
+import { registerAs } from '@nestjs/config';
+import { env } from 'node:process';
 
-export default registerAs("brightdata", () => ({
+export default registerAs('brightdata', () => ({
   apiKey: env.BRIGHTDATA_API_KEY,
   baseUrl: env.BRIGHTDATA_BASE_URL,
   timeout: env.BRIGHTDATA_TIMEOUT
     ? parseInt(env.BRIGHTDATA_TIMEOUT, 10)
     : 30000,
-  datasetId: env.BRIGHTDATA_DATASET_ID,
 }));

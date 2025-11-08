@@ -1,9 +1,9 @@
-import { Module } from "@nestjs/common";
+import { Module } from '@nestjs/common';
 
-import { BrightdataConfigModule, OpenrouterConfigModule } from "@libs/config";
+import { BrightdataConfigModule, OpenrouterConfigModule } from '@libs/config';
 
-import { InstagramController } from "./instagram.controller";
-import { InstagramService } from "./instagram.service";
+import { InstagramController } from './instagram.controller';
+import { InstagramService } from './instagram.service';
 
 @Module({
   imports: [BrightdataConfigModule, OpenrouterConfigModule],

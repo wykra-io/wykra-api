@@ -1,7 +1,7 @@
-import { registerAs } from "@nestjs/config";
-import { env } from "node:process";
+import { registerAs } from '@nestjs/config';
+import { env } from 'node:process';
 
-export default registerAs("openrouter", () => ({
+export default registerAs('openrouter', () => ({
   apiKey: env.OPENROUTER_API_KEY,
   baseUrl: env.OPENROUTER_BASE_URL,
   model: env.OPENROUTER_MODEL,

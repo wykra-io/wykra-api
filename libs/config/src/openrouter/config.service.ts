@@ -1,30 +1,30 @@
-import { Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class OpenrouterConfigService {
   constructor(private readonly config: ConfigService) {}
 
   public get apiKey(): string {
-    return this.config.getOrThrow<string>("openrouter.apiKey");
+    return this.config.getOrThrow<string>('openrouter.apiKey');
   }
 
   public get baseUrl(): string {
     return this.config.get<string>(
-      "openrouter.baseUrl",
-      "https://openrouter.ai/api/v1",
+      'openrouter.baseUrl',
+      'https://openrouter.ai/api/v1',
     );
   }
 
   public get model(): string {
     return this.config.get<string>(
-      "openrouter.model",
-      "anthropic/claude-3.5-sonnet",
+      'openrouter.model',
+      'anthropic/claude-3.5-sonnet',
     );
   }
 
   public get timeout(): number {
-    return this.config.get<number>("openrouter.timeout", 60000);
+    return this.config.get<number>('openrouter.timeout', 60000);
   }
 }
 
