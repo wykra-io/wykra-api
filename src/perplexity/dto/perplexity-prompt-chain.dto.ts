@@ -1,6 +1,7 @@
 import { IsString } from 'class-validator';
 
-export class PerplexitySearchDTO {
+export class PerplexitySearchChainDTO {
   @IsString()
   query: string;
 }
+

@@ -167,7 +167,7 @@ Once the server is running (locally or via Docker), you can hit the analysis end
     }'
   ```
 
-**Perplexity Search endpoint:**
+**Perplexity Search endpoint (Bright Data):**
 
 - **cURL**:
   ```bash
@@ -177,6 +177,28 @@ Once the server is running (locally or via Docker), you can hit the analysis end
       "url": "https://www.perplexity.ai",
       "prompt": "Find Instagram profiles of NYC sourdough bakers. Return 15 profile URLs only (one per line). Prefer individual bakers (not brands or agencies). NYC includes Manhattan, Brooklyn, Queens.",
       "index": 1
+    }'
+  ```
+
+**Perplexity Search endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/perplexity/search" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "query": "Give me a list of 10 micro-influencers (5K–50K followers) on Instagram who post about tech gadgets and AI tools"
+    }'
+  ```
+
+**Perplexity Search Chain endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/perplexity/search-chain" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "query": "indie makers and AI builders"
     }'
   ```
 
