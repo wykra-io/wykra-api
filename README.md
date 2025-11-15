@@ -136,6 +136,22 @@ Once the server is running (locally or via Docker), you can hit the analysis end
   ```
   Replace `<profile_name>` with the Instagram handle you want to inspect.
 
+**Google SERP endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/brightdata/google-serp" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "keyword": "site:instagram.com \"AI tools\" OR \"data engineer\" OR \"#buildinpublic\"",
+      "url": "https://www.google.com/",
+      "language": "en",
+      "country": "US",
+      "startPage": 1,
+      "endPage": 5
+    }'
+  ```
+
 ### Environment variables
 
 Required core config:

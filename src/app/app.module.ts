@@ -7,12 +7,14 @@ import { AppConfigModule } from '@libs/config';
 import { SentryClientModule } from '@libs/sentry';
 
 import { AppController } from './app.controller';
+import { BrightdataModule } from '../brightdata';
 import { InstagramModule } from '../instagram';
 import { PerplexityModule } from '../perplexity';
 
 @Module({
   imports: [
     AppConfigModule,
+    BrightdataModule,
     EventEmitterModule.forRoot(),
     InstagramModule,
     PerplexityModule,
