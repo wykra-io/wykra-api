@@ -129,12 +129,78 @@ docker-compose exec api npm run migration:run
 
 Once the server is running (locally or via Docker), you can hit the analysis endpoint in two ways:
 
+**Instagram profile analysis endpoint:**
+
 - **Browser**: open `http://localhost:3011/api/v1/instagram/analysis?profile=<profile_name>` to view the JSON response. A short video walkthrough is coming soon.
 - **cURL**:
   ```bash
   curl "http://localhost:3011/api/v1/instagram/analysis?profile=<profile_name>"
   ```
   Replace `<profile_name>` with the Instagram handle you want to inspect.
+
+**Google SERP endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/brightdata/google-serp" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "keyword": "site:instagram.com \"AI tools\" OR \"data engineer\" OR \"#buildinpublic\"",
+      "url": "https://www.google.com/",
+      "language": "en",
+      "country": "US",
+      "startPage": 1,
+      "endPage": 5
+    }'
+  ```
+
+**Google AI Mode endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/brightdata/google-ai-mode" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "url": "https://google.com/aimode",
+      "prompt": "Find Instagram profiles of NYC sourdough bakers. Use the Google query: site:instagram.com '\''sourdough'\'' '\''NYC baker'\''. Return profile URLs only.",
+      "country": "US"
+    }'
+  ```
+
+**Perplexity Search endpoint (Bright Data):**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/brightdata/perplexity-search" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "url": "https://www.perplexity.ai",
+      "prompt": "Find Instagram profiles of NYC sourdough bakers. Return 15 profile URLs only (one per line). Prefer individual bakers (not brands or agencies). NYC includes Manhattan, Brooklyn, Queens.",
+      "index": 1
+    }'
+  ```
+
+**Perplexity Search endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/perplexity/search" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "query": "Give me a list of 10 micro-influencers (5K–50K followers) on Instagram who post about tech gadgets and AI tools"
+    }'
+  ```
+
+**Perplexity Search Chain endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/perplexity/search-chain" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "query": "indie makers and AI builders"
+    }'
+  ```
 
 ### Environment variables
 

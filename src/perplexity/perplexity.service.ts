@@ -117,16 +117,14 @@ export class PerplexityService {
   }
 
   /**
-   * Finds micro-influencers on Instagram who post about tech gadgets and AI tools.
+   * Searches for micro-influencers on Instagram based on the provided query.
    *
-   * @param {string} model - Optional Perplexity model to use. Defaults to the service default.
+   * @param {string} query - The search query describing what influencers to find.
    *
    * @returns {Promise<PerplexityChatResponse>} The response from Perplexity with influencer data in JSON format.
    */
-  public async findAsDiscoveryEngine(
-    model?: string,
-  ): Promise<PerplexityChatResponse> {
-    const prompt = `Give me a list of 10 micro-influencers (5K–50K followers) on Instagram who post about tech gadgets and AI tools. Prefer creators with high engagement and human-looking content. Provide the results in pure JSON format, containing a list of up to 15 objects with the following fields:
+  public async search(query: string): Promise<PerplexityChatResponse> {
+    const prompt = `${query}. Prefer creators with high engagement and human-looking content. Provide the results in pure JSON format, containing a list of up to 15 objects with the following fields:
 
 "name" – the influencer's name
 
@@ -144,7 +142,6 @@ Return only the JSON array, without any explanations or extra text.`;
 
     return this.chat({
       message: prompt,
-      model,
     });
   }
 
@@ -152,18 +149,18 @@ Return only the JSON array, without any explanations or extra text.`;
    * Gets Instagram hashtags and then finds micro-influencers using those hashtags.
    * Makes two sequential Perplexity calls: first for hashtags, then for influencers.
    *
-   * @param {string} model - Optional Perplexity model to use. Defaults to the service default.
+   * @param {string} query - The search query describing the topic/community to find hashtags for.
    *
    * @returns {Promise<PerplexityPromptChainResponse>} Combined response with hashtags and influencers.
    */
-  public async promptChain(
-    model?: string,
+  public async searchChain(
+    query: string,
   ): Promise<PerplexityPromptChainResponse> {
     try {
-      this.logger.log('Starting promptChain: fetching hashtags...');
+      this.logger.log('Starting searchChain: fetching hashtags...');
 
       // First call: Get hashtags
-      const hashtagsPrompt = `Give me 10 Instagram hashtags used by indie makers and AI builders in 2024–2025. Provide the results in pure JSON format, containing a list of up to 15 objects with the following fields:
+      const hashtagsPrompt = `Give me 10 Instagram hashtags used by ${query} in 2024–2025. Provide the results in pure JSON format, containing a list of up to 15 objects with the following fields:
 
 "hashtag","short_rationale","popularity_note"
 
@@ -171,7 +168,6 @@ Return only the JSON array, without any explanations or extra text.`;
 
       const hashtagsResponse = await this.chat({
         message: hashtagsPrompt,
-        model,
       });
 
       console.log('hashtagsResponse: ', hashtagsResponse.content);
@@ -214,7 +210,6 @@ Return only the JSON array.`;
 
       const influencersResponse = await this.chat({
         message: influencersPrompt,
-        model,
       });
 
       // Parse influencers from the second response
@@ -249,7 +244,7 @@ Return only the JSON array.`;
         influencersResponse,
       };
     } catch (error) {
-      this.logger.error('Error in promptChain:', error);
+      this.logger.error('Error in searchChain:', error);
       this.sentry.sendException(error);
       throw error;
     }
