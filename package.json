@@ -2,9 +2,9 @@
   "name": "wykra-api",
   "version": "0.0.1",
   "description": "API for third-party integrations and LLM processing",
-  "author": "",
+  "author": "Wykra",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT License",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"libs/**/*.ts\"",

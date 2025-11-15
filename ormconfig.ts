@@ -15,4 +15,3 @@ export default new DataSource({
   logging: false,
   migrations: ['db/migrations/**/*.ts'],
 });
-
