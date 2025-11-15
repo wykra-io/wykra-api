@@ -14,4 +14,3 @@ export class AppController {
     return { status: 'OK' };
   }
 }
-

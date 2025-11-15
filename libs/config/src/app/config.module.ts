@@ -15,4 +15,3 @@ import configuration from './configuration';
   exports: [AppConfigService],
 })
 export class AppConfigModule {}
-

@@ -84,4 +84,3 @@ export interface InstagramAnalysisResponse {
   data: InstagramAnalysisData;
   message: string;
 }
-

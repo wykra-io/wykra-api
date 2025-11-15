@@ -8,12 +8,14 @@ import { SentryClientModule } from '@libs/sentry';
 
 import { AppController } from './app.controller';
 import { InstagramModule } from '../instagram';
+import { PerplexityModule } from '../perplexity';
 
 @Module({
   imports: [
     AppConfigModule,
     EventEmitterModule.forRoot(),
     InstagramModule,
+    PerplexityModule,
     SentryClientModule,
     SentryModule.forRoot(),
   ],
@@ -26,4 +28,3 @@ import { InstagramModule } from '../instagram';
   ],
 })
 export class AppModule {}
-

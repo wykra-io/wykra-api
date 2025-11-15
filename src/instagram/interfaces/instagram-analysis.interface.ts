@@ -15,4 +15,3 @@ export interface InstagramAnalysisResult {
   hashtagsStatistics?: string;
   message?: string; // Error or warning message if profile is private or data unsuitable
 }
-
