@@ -129,6 +129,8 @@ docker-compose exec api npm run migration:run
 
 Once the server is running (locally or via Docker), you can hit the analysis endpoint in two ways:
 
+**Instagram profile analysis endpoint:**
+
 - **Browser**: open `http://localhost:3011/api/v1/instagram/analysis?profile=<profile_name>` to view the JSON response. A short video walkthrough is coming soon.
 - **cURL**:
   ```bash
@@ -149,6 +151,32 @@ Once the server is running (locally or via Docker), you can hit the analysis end
       "country": "US",
       "startPage": 1,
       "endPage": 5
+    }'
+  ```
+
+**Google AI Mode endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/brightdata/google-ai-mode" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "url": "https://google.com/aimode",
+      "prompt": "Find Instagram profiles of NYC sourdough bakers. Use the Google query: site:instagram.com '\''sourdough'\'' '\''NYC baker'\''. Return profile URLs only.",
+      "country": "US"
+    }'
+  ```
+
+**Perplexity Search endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/brightdata/perplexity-search" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "url": "https://www.perplexity.ai",
+      "prompt": "Find Instagram profiles of NYC sourdough bakers. Return 15 profile URLs only (one per line). Prefer individual bakers (not brands or agencies). NYC includes Manhattan, Brooklyn, Queens.",
+      "index": 1
     }'
   ```
 
