@@ -138,6 +138,17 @@ Once the server is running (locally or via Docker), you can hit the analysis end
   ```
   Replace `<profile_name>` with the Instagram handle you want to inspect.
 
+**Instagram search endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/instagram/search" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "query": "Find up to 15 public Instagram accounts from Portugal who post about cooking and have not more than 50000 followers"
+    }'
+  ```
+
 **Google SERP endpoint:**
 
 - **cURL**:
