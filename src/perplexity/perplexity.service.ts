@@ -1,5 +1,10 @@
 import { ChatOpenAI } from '@langchain/openai';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import {
+  HumanMessage,
+  SystemMessage,
+  AIMessage,
+  BaseMessage,
+} from '@langchain/core/messages';
 import { Injectable, Logger } from '@nestjs/common';
 
 import { OpenrouterConfigService } from '@libs/config';
@@ -58,6 +63,7 @@ export class PerplexityService {
 
   /**
    * Sends a chat message to Perplexity via OpenRouter.
+   * Handles continue reasoning by checking finish_reason and continuing the conversation if needed.
    *
    * @param {PerplexityChatDTO} dto - The chat request containing message and optional parameters.
    *
@@ -75,7 +81,7 @@ export class PerplexityService {
       const llmClient = this.createClient(model);
 
       // Prepare messages
-      const messages: (SystemMessage | HumanMessage)[] = [];
+      const messages: BaseMessage[] = [];
 
       if (dto.systemPrompt) {
         messages.push(new SystemMessage(dto.systemPrompt));
@@ -83,27 +89,102 @@ export class PerplexityService {
 
       messages.push(new HumanMessage(dto.message));
 
-      // Invoke the LLM
-      const response = await llmClient.invoke(messages);
+      // Track total usage across multiple invocations
+      const totalUsage = {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+      };
 
-      // Extract usage information if available
-      const usage = response.response_metadata?.usage
-        ? {
-            promptTokens: response.response_metadata.usage.prompt_tokens,
-            completionTokens:
-              response.response_metadata.usage.completion_tokens,
-            totalTokens: response.response_metadata.usage.total_tokens,
+      const maxIterations = 5; // Prevent infinite loops
+      let iteration = 0;
+      let fullContent = '';
+
+      // Continue reasoning loop
+      while (iteration < maxIterations) {
+        iteration++;
+
+        // Invoke the LLM
+        const response = await llmClient.invoke(messages);
+        console.log(`response (iteration ${iteration}): `, response);
+
+        // Accumulate content
+        const responseContent = response.content as string;
+        fullContent += (fullContent ? '\n\n' : '') + responseContent;
+
+        // Accumulate usage
+        if (response.response_metadata?.usage) {
+          totalUsage.promptTokens +=
+            response.response_metadata.usage.prompt_tokens || 0;
+          totalUsage.completionTokens +=
+            response.response_metadata.usage.completion_tokens || 0;
+          totalUsage.totalTokens +=
+            response.response_metadata.usage.total_tokens || 0;
+        }
+
+        // Check finish reason to determine if we should continue
+        const finishReason =
+          response.response_metadata?.finish_reason ||
+          response.response_metadata?.finishReason;
+
+        this.logger.log(
+          `Iteration ${iteration}: finish_reason = ${finishReason}`,
+        );
+
+        // If finish_reason is "stop" or null/undefined, we're done
+        if (finishReason === 'stop' || !finishReason) {
+          this.logger.log(`Response complete after ${iteration} iteration(s)`);
+          break;
+        }
+
+        // If finish_reason is "tool_calls" but tool_calls is empty or we want to continue reasoning
+        // Add the assistant's response to the conversation and continue
+        if (
+          finishReason === 'tool_calls' ||
+          finishReason === 'length' ||
+          finishReason === 'content_filter'
+        ) {
+          // Add assistant response to message history
+          messages.push(new AIMessage(responseContent));
+
+          // If it's tool_calls, we might want to add a follow-up message
+          if (finishReason === 'tool_calls') {
+            // Add a message to continue reasoning
+            messages.push(
+              new HumanMessage(
+                'Please continue with your reasoning and complete your response.',
+              ),
+            );
           }
-        : undefined;
+
+          this.logger.log(
+            `Continuing reasoning (${finishReason}), iteration ${iteration}`,
+          );
+          continue;
+        }
+
+        // For any other finish reason, break
+        break;
+      }
+
+      if (iteration >= maxIterations) {
+        this.logger.warn(
+          `Reached maximum iterations (${maxIterations}), returning partial response`,
+        );
+      }
 
       this.logger.log(
-        `Successfully received response from Perplexity (${model})`,
+        `Successfully received response from Perplexity (${model}) after ${iteration} iteration(s)`,
       );
 
       return {
-        content: response.content as string,
+        content: fullContent,
         model,
-        usage,
+        usage: {
+          promptTokens: totalUsage.promptTokens,
+          completionTokens: totalUsage.completionTokens,
+          totalTokens: totalUsage.totalTokens,
+        },
       };
     } catch (error) {
       this.logger.error('Error calling Perplexity via OpenRouter:', error);

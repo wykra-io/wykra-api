@@ -1,15 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 
-import { Task, TaskStatus } from '@libs/entities';
+import { InstagramSearchProfile, Task, TaskStatus } from '@libs/entities';
 import { QueueService } from '@libs/queue';
-import { TasksRepository } from '@libs/repositories';
+import {
+  InstagramSearchProfilesRepository,
+  TasksRepository,
+} from '@libs/repositories';
 
 @Injectable()
 export class TasksService {
   constructor(
     private readonly queueService: QueueService,
     private readonly tasksRepo: TasksRepository,
+    private readonly instagramSearchProfilesRepo: InstagramSearchProfilesRepository,
   ) {}
 
   /**
@@ -42,14 +46,22 @@ export class TasksService {
   }
 
   /**
-   * Gets the status of a task by its ID.
+   * Gets the status of a task by its ID, including any related Instagram search profiles.
    *
    * @param {string} taskId - The task ID.
    *
-   * @returns {Promise<Task | null>} The task or null if not found.
+   * @returns {Promise<{ task: Task | null; instagramProfiles: InstagramSearchProfile[] }>}
+   * The task and its related Instagram search profiles.
    */
-  public async getTaskStatus(taskId: string): Promise<Task | null> {
-    return this.tasksRepo.findOneByTaskId(taskId);
+  public async getTaskStatus(taskId: string): Promise<{
+    task: Task | null;
+    instagramProfiles: InstagramSearchProfile[];
+  }> {
+    const [task, instagramProfiles] = await Promise.all([
+      this.tasksRepo.findOneByTaskId(taskId),
+      this.instagramSearchProfilesRepo.findByTaskId(taskId),
+    ]);
+
+    return { task, instagramProfiles };
   }
 }
-

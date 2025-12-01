@@ -15,4 +15,3 @@ import { RedisConfigService } from './config.service';
   exports: [ConfigService, RedisConfigService],
 })
 export class RedisConfigModule {}
-

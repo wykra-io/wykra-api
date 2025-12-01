@@ -5,4 +5,3 @@ export class CreateTaskDto {
   @IsString()
   data?: string;
 }
-

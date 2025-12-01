@@ -15,4 +15,3 @@ import { DbConfigService } from './config.service';
   exports: [ConfigService, DbConfigService],
 })
 export class DbConfigModule {}
-

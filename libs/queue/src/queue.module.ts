@@ -41,9 +41,9 @@ import { QueueService } from './queue.service';
       inject: [RedisConfigService],
     }),
     BullModule.registerQueue({ name: QueueName.Tasks }),
+    BullModule.registerQueue({ name: QueueName.Instagram }),
   ],
   providers: [QueueService],
   exports: [QueueService],
 })
 export class QueueModule {}
-

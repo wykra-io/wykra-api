@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 
 import { QueueName } from '@libs/queue';
-import { Task, TaskStatus } from '@libs/entities';
+import { TaskStatus } from '@libs/entities';
 import { TasksRepository } from '@libs/repositories';
 
 interface TaskJobData {
@@ -48,7 +48,9 @@ export class TasksProcessor {
         const remaining = 60 - elapsed;
 
         if (remaining > 0 && remaining % 10 === 0) {
-          this.logger.log(`Task ${taskId} progress: ${elapsed}s elapsed, ${remaining}s remaining`);
+          this.logger.log(
+            `Task ${taskId} progress: ${elapsed}s elapsed, ${remaining}s remaining`,
+          );
         }
 
         // Sleep for 1 second to avoid busy waiting
@@ -76,4 +78,3 @@ export class TasksProcessor {
     }
   }
 }
-

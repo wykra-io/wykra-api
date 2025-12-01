@@ -11,4 +11,3 @@ export default registerAs('db', () => ({
   logging: env.DB_LOGGING === 'true',
   ssl: env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 }));
-

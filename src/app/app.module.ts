@@ -5,7 +5,7 @@ import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AppConfigModule, DbConfigModule, DbConfigService } from '@libs/config';
-import { Task } from '@libs/entities';
+import { InstagramSearchProfile, Task } from '@libs/entities';
 import { SentryClientModule } from '@libs/sentry';
 
 import { AppController } from './app.controller';
@@ -36,7 +36,7 @@ import { TasksModule } from '../tasks';
         database: config.database,
         synchronize: config.synchronize,
         logging: config.logging,
-        entities: [Task],
+        entities: [Task, InstagramSearchProfile],
         ssl: config.ssl,
       }),
       inject: [DbConfigService],

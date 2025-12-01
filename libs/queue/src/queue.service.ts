@@ -6,10 +6,16 @@ import { QueueName } from './enums';
 
 @Injectable()
 export class QueueService {
-  constructor(@InjectQueue(QueueName.Tasks) private readonly queueTasks: Queue) {}
+  constructor(
+    @InjectQueue(QueueName.Tasks) private readonly queueTasks: Queue,
+    @InjectQueue(QueueName.Instagram) private readonly queueInstagram: Queue,
+  ) {}
 
   public get tasks(): Queue {
     return this.queueTasks;
   }
-}
 
+  public get instagram(): Queue {
+    return this.queueInstagram;
+  }
+}

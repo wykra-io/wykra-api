@@ -25,11 +25,21 @@ export class TasksController {
    *
    * @param {string} id - The task ID.
    *
-   * @returns {Promise<{ taskId: string; status: string; result?: string; error?: string; startedAt?: Date; completedAt?: Date }>} The task status.
+   * @returns {Promise<{
+   *   taskId: string;
+   *   status: string;
+   *   result?: string;
+   *   error?: string;
+   *   startedAt?: Date;
+   *   completedAt?: Date;
+   *   instagramProfiles: unknown[];
+   * }>} The task status and related Instagram search profiles.
    */
   @Get(':id')
   public async getTaskStatus(@Param('id') id: string) {
-    const task = await this.tasksService.getTaskStatus(id);
+    const { task, instagramProfiles } = await this.tasksService.getTaskStatus(
+      id,
+    );
 
     if (!task) {
       throw new HttpException('Task not found', HttpStatus.NOT_FOUND);
@@ -42,6 +52,7 @@ export class TasksController {
       error: task.error,
       startedAt: task.startedAt,
       completedAt: task.completedAt,
+      instagramProfiles,
     };
   }
 }

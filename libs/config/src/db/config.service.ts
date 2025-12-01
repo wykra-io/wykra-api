@@ -38,4 +38,3 @@ export class DbConfigService {
     return this.config.get<boolean | TlsOptions>('db.ssl', false);
   }
 }
-

@@ -40,4 +40,3 @@ export class RedisConfigService {
     return this.config.getOrThrow<boolean>('redis.isCluster');
   }
 }
-

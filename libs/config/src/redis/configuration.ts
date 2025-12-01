@@ -16,4 +16,3 @@ export default registerAs('redis', () => ({
   retryDelay: parseInt(env.REDIS_RETRY_DELAY || '30000', 10),
   isCluster: env.REDIS_IS_CLUSTER === 'true',
 }));
-

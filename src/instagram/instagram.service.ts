@@ -2,19 +2,41 @@ import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage } from '@langchain/core/messages';
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { randomUUID } from 'crypto';
 
 import {
   BrightdataConfigService,
   BrightdataDataset,
   OpenrouterConfigService,
 } from '@libs/config';
+import { TaskStatus } from '@libs/entities';
+import { QueueService } from '@libs/queue';
 import { SentryClientService } from '@libs/sentry';
+import {
+  InstagramSearchProfilesRepository,
+  TasksRepository,
+} from '@libs/repositories';
 
 import {
   InstagramAnalysisData,
   InstagramAnalysisResult,
   InstagramProfile,
 } from './interfaces';
+
+interface InstagramSearchContext {
+  category: string | null;
+  results_count: number | null;
+  location: string | null;
+  followers_range: string | null;
+}
+
+export interface InstagramProfileAnalysis {
+  profileUrl: string;
+  analysis: {
+    summary: string;
+    score: number;
+  };
+}
 
 @Injectable()
 export class InstagramService {
@@ -26,6 +48,9 @@ export class InstagramService {
     private readonly brightdataConfig: BrightdataConfigService,
     private readonly openrouterConfig: OpenrouterConfigService,
     private readonly sentry: SentryClientService,
+    private readonly queueService: QueueService,
+    private readonly tasksRepo: TasksRepository,
+    private readonly searchProfilesRepo: InstagramSearchProfilesRepository,
   ) {
     this.httpClient = axios.create({
       baseURL: this.brightdataConfig.baseUrl,
@@ -77,6 +102,100 @@ export class InstagramService {
       this.sentry.sendException(error, { profile });
 
       throw error;
+    }
+  }
+
+  /**
+   * Extracts structured context from a free-form user query about finding influencers.
+   *
+   * Uses OpenRouter with the `deepseek/deepseek-chat-v3.1` model via LangChain.
+   *
+   * @param {string} query - The raw user query.
+   *
+   * @returns {Promise<InstagramSearchContext>} Parsed context object.
+   */
+  public async extractSearchContext(
+    query: string,
+  ): Promise<InstagramSearchContext> {
+    try {
+      const client = new ChatOpenAI({
+        modelName: 'deepseek/deepseek-chat-v3.1',
+        openAIApiKey: this.openrouterConfig.apiKey,
+        configuration: {
+          baseURL: this.openrouterConfig.baseUrl,
+          defaultHeaders: {
+            'HTTP-Referer': 'https://wykra-api.com',
+            'X-Title': 'Wykra API - Instagram Search',
+          },
+        },
+        temperature: 0,
+        timeout: this.openrouterConfig.timeout,
+      });
+
+      const prompt = `Extract structured context from the user query about finding influencers.
+
+From the query, identify and return the following fields (leave empty if not provided):
+
+category: the niche or topic the user wants (e.g., cooking, beauty, travel).
+
+results_count: the number of influencers requested, if mentioned.
+
+location: the geographic area (city, region, country) if mentioned.
+
+followers_range: the desired follower count or range, if included.
+
+Return the result strictly as a JSON object with these fields.
+
+User query: '${query}'`;
+
+      const response = await client.invoke([new HumanMessage(prompt)]);
+      const responseText = response.content as string;
+
+      let parsed: Partial<InstagramSearchContext> = {};
+
+      try {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        const jsonString = jsonMatch ? jsonMatch[0] : responseText;
+        parsed = JSON.parse(jsonString) as Partial<InstagramSearchContext>;
+      } catch (parseError) {
+        this.logger.warn(
+          'Failed to parse Instagram search context JSON, using empty context',
+          parseError,
+        );
+        this.sentry.sendException(parseError, {
+          rawResponse: responseText,
+          query,
+        });
+      }
+
+      return {
+        category: typeof parsed.category === 'string' ? parsed.category : null,
+        results_count:
+          typeof parsed.results_count === 'number'
+            ? parsed.results_count
+            : parsed.results_count &&
+                !Number.isNaN(Number(parsed.results_count))
+              ? Number(parsed.results_count)
+              : null,
+        location: typeof parsed.location === 'string' ? parsed.location : null,
+        followers_range:
+          typeof parsed.followers_range === 'string'
+            ? parsed.followers_range
+            : null,
+      };
+    } catch (error) {
+      this.logger.error(
+        'Error extracting Instagram search context with OpenRouter:',
+        error,
+      );
+      this.sentry.sendException(error, { query });
+
+      return {
+        category: null,
+        results_count: null,
+        location: null,
+        followers_range: null,
+      };
     }
   }
 
@@ -168,6 +287,319 @@ export class InstagramService {
         );
       }
     }
+  }
+
+  /**
+   * Collects Instagram profile data from BrightData by profile URLs.
+   *
+   * Uses the "Instagram - Profiles - collect by URL" mode of the Instagram dataset.
+   *
+   * @param {string[]} urls - Array of Instagram profile URLs to collect.
+   *
+   * @returns {Promise<unknown[]>} Array of raw profile objects from BrightData.
+   */
+  public async collectProfilesByUrls(urls: string[]): Promise<unknown[]> {
+    if (!urls.length) {
+      return [];
+    }
+
+    try {
+      this.logger.log(
+        `Collecting Instagram profiles by URL from BrightData for ${urls.length} urls`,
+      );
+
+      const endpoint = `/datasets/v3/scrape`;
+      const datasetId = BrightdataDataset.INSTAGRAM;
+
+      // BrightData "collect by URL" mode expects profile URLs in the input
+      const requestBody = {
+        input: urls.map((url) => ({ url })),
+      };
+
+      const params = {
+        dataset_id: datasetId,
+        notify: 'false',
+        include_errors: 'true',
+        type: 'url_collection',
+      };
+
+      const response = await this.httpClient.post<unknown>(
+        endpoint,
+        requestBody,
+        {
+          params,
+        },
+      );
+
+      this.logger.log(
+        `Successfully collected Instagram profiles by URL for ${urls.length} urls`,
+      );
+
+      const data = response.data;
+
+      // BrightData often returns NDJSON (newline-delimited JSON) as a string
+      if (typeof data === 'string') {
+        const lines = data
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+
+        const items: unknown[] = [];
+
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line) as Record<string, unknown>;
+
+            // Skip error entries like {"error_code":"dead_page", ...}
+            if (obj.error_code) {
+              continue;
+            }
+
+            items.push(obj);
+          } catch {
+            // Ignore malformed lines, we'll just skip them
+          }
+        }
+
+        if (items.length > 0) {
+          return items;
+        }
+      }
+
+      if (Array.isArray(data)) {
+        return data as unknown[];
+      }
+
+      if (data && typeof data === 'object') {
+        return [data] as unknown[];
+      }
+
+      this.logger.warn(
+        'Unexpected response format from BrightData collectProfilesByUrls, returning empty array',
+      );
+      return [];
+    } catch (error) {
+      const axiosError = error as AxiosError;
+
+      if (axiosError.response) {
+        const status = axiosError.response.status;
+        const statusText = axiosError.response.statusText;
+        const responseData = axiosError.response.data;
+
+        this.logger.error(
+          `BrightData API error for collectProfilesByUrls: ${status} - ${statusText}`,
+          responseData,
+        );
+
+        this.sentry.sendException(error, { urls });
+
+        throw new Error(
+          `Failed to collect Instagram profiles by URL: ${statusText} (${status})`,
+        );
+      } else if (axiosError.request) {
+        this.logger.error(
+          'No response from BrightData API for collectProfilesByUrls',
+        );
+
+        this.sentry.sendException(error, { urls });
+
+        throw new Error('No response from Instagram collect-by-URL API');
+      } else {
+        this.logger.error(
+          'Error setting up request for collectProfilesByUrls:',
+          axiosError.message,
+        );
+
+        this.sentry.sendException(error, { urls });
+
+        throw new Error(
+          `Failed to collect Instagram profiles by URL: ${axiosError.message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Runs a short DeepSeek analysis for each collected Instagram profile.
+   *
+   * @param {unknown[]} profiles - Raw profiles returned from BrightData.
+   *
+   * @returns {Promise<InstagramProfileAnalysis[]>} Array of profile URL + analysis JSON.
+   */
+  public async analyzeCollectedProfiles(
+    taskId: string,
+    profiles: unknown[],
+  ): Promise<InstagramProfileAnalysis[]> {
+    if (!profiles.length) {
+      return [];
+    }
+
+    const client = new ChatOpenAI({
+      modelName: 'deepseek/deepseek-chat-v3.1',
+      openAIApiKey: this.openrouterConfig.apiKey,
+      configuration: {
+        baseURL: this.openrouterConfig.baseUrl,
+        defaultHeaders: {
+          'HTTP-Referer': 'https://wykra-api.com',
+          'X-Title': 'Wykra API - Instagram Profile Analysis',
+        },
+      },
+      temperature: 0,
+      timeout: this.openrouterConfig.timeout,
+    });
+
+    const analyses: InstagramProfileAnalysis[] = [];
+
+    for (const profile of profiles) {
+      const p = profile as Record<string, unknown>;
+      const profileUrl =
+        (typeof p.profile_url === 'string' && p.profile_url) ||
+        (typeof p.url === 'string' && p.url);
+
+      if (!profileUrl) {
+        continue;
+      }
+
+      const account = typeof p.account === 'string' ? p.account : 'unknown';
+      const followers = typeof p.followers === 'number' ? p.followers : null;
+      const postsCount =
+        typeof p.posts_count === 'number' ? p.posts_count : null;
+      const isPrivate = typeof p.is_private === 'boolean' ? p.is_private : null;
+      const isBusinessAccount =
+        typeof p.is_business_account === 'boolean'
+          ? p.is_business_account
+          : null;
+      const isProfessionalAccount =
+        typeof p.is_professional_account === 'boolean'
+          ? p.is_professional_account
+          : null;
+      const biography = typeof p.biography === 'string' ? p.biography : null;
+
+      const prompt = `You are analyzing an Instagram profile for brand/influencer discovery.
+
+Profile data (JSON):
+${JSON.stringify(
+  {
+    account,
+    profile_url: profileUrl,
+    followers,
+    posts_count: postsCount,
+    is_private: isPrivate,
+    is_business_account: isBusinessAccount,
+    is_professional_account: isProfessionalAccount,
+    biography,
+  },
+  null,
+  2,
+)}
+
+Provide a very short evaluation of this profile's potential as a micro-influencer for brand collaborations.
+
+Return ONLY a JSON object with the following shape:
+{
+  "summary": "1–3 sentence summary explaining the profile and why it is or is not a good fit.",
+  "score": 1-5
+}
+
+Where:
+- score 1 = very poor fit or unusable profile
+- score 3 = average/acceptable
+- score 5 = excellent, highly relevant and authentic.`;
+
+      try {
+        const response = await client.invoke([new HumanMessage(prompt)]);
+        const responseText = response.content as string;
+
+        let parsed: {
+          summary?: string;
+          score?: number;
+        } = {};
+
+        try {
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          const jsonString = jsonMatch ? jsonMatch[0] : responseText;
+          parsed = JSON.parse(jsonString) as {
+            summary?: string;
+            score?: number;
+          };
+        } catch (parseError) {
+          this.logger.warn(
+            'Failed to parse DeepSeek profile analysis JSON, using fallback analysis',
+            parseError,
+          );
+          this.sentry.sendException(parseError, {
+            rawResponse: responseText,
+            profileUrl,
+          });
+        }
+
+        const summary =
+          typeof parsed.summary === 'string' && parsed.summary.length > 0
+            ? parsed.summary
+            : `Basic analysis for ${account} (${profileUrl}). Followers: ${
+                followers ?? 'unknown'
+              }, posts: ${postsCount ?? 'unknown'}.`;
+
+        let score =
+          typeof parsed.score === 'number' && !Number.isNaN(parsed.score)
+            ? parsed.score
+            : 3;
+
+        if (score < 1 || score > 5) {
+          score = 3;
+        }
+
+        const analysis = {
+          profileUrl,
+          analysis: {
+            summary,
+            score,
+          },
+        };
+
+        analyses.push(analysis);
+
+        // Persist this profile immediately after analysis
+        try {
+          await this.searchProfilesRepo.createMany([
+            {
+              taskId,
+              account,
+              profileUrl,
+              followers,
+              isPrivate,
+              isBusinessAccount,
+              isProfessionalAccount,
+              analysisSummary: summary,
+              analysisScore: score,
+              raw: JSON.stringify(p),
+            },
+          ]);
+        } catch (saveError) {
+          this.logger.error(
+            `Failed to save InstagramSearchProfile for ${profileUrl}`,
+            saveError,
+          );
+          this.sentry.sendException(saveError, { profileUrl, taskId });
+        }
+      } catch (error) {
+        this.logger.error(
+          `Error analyzing Instagram profile with DeepSeek: ${profileUrl}`,
+          error,
+        );
+        this.sentry.sendException(error, { profileUrl });
+
+        analyses.push({
+          profileUrl,
+          analysis: {
+            summary: `Analysis failed for ${account} (${profileUrl}).`,
+            score: 2,
+          },
+        });
+      }
+    }
+
+    return analyses;
   }
 
   /**
@@ -376,5 +808,34 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
     const matches = caption.match(hashtagRegex);
 
     return matches ? matches.map((tag) => tag.substring(1)) : [];
+  }
+
+  /**
+   * Creates a new Instagram search job and queues it for processing.
+   *
+   * @param {string} query - The search query string.
+   *
+   * @returns {Promise<string>} The task ID.
+   */
+  public async search(query: string): Promise<string> {
+    const taskId = randomUUID();
+
+    // Create task record in database
+    await this.tasksRepo.create({
+      taskId,
+      status: TaskStatus.Pending,
+      result: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    });
+
+    // Queue the search job for processing
+    await this.queueService.instagram.add('search', {
+      taskId,
+      query,
+    });
+
+    return taskId;
   }
 }
