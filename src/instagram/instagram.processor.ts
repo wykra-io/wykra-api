@@ -204,7 +204,7 @@ Return only the list of URLs with no extra text.`;
         );
       }
 
-      // Run short DeepSeek analysis for each collected profile and
+      // Run short Anthropic analysis for each collected profile and
       // persist each profile to the database as it is analyzed
       const analyzedProfiles =
         combinedProfiles.length > 0

@@ -108,7 +108,7 @@ export class InstagramService {
   /**
    * Extracts structured context from a free-form user query about finding influencers.
    *
-   * Uses OpenRouter with the `deepseek/deepseek-chat-v3.1` model via LangChain.
+   * Uses OpenRouter with the `anthropic/claude-3.5-sonnet` model via LangChain.
    *
    * @param {string} query - The raw user query.
    *
@@ -119,7 +119,7 @@ export class InstagramService {
   ): Promise<InstagramSearchContext> {
     try {
       const client = new ChatOpenAI({
-        modelName: 'deepseek/deepseek-chat-v3.1',
+        modelName: 'anthropic/claude-3.5-sonnet',
         openAIApiKey: this.openrouterConfig.apiKey,
         configuration: {
           baseURL: this.openrouterConfig.baseUrl,
@@ -420,7 +420,7 @@ User query: '${query}'`;
   }
 
   /**
-   * Runs a short DeepSeek analysis for each collected Instagram profile.
+   * Runs a short Anthropic analysis for each collected Instagram profile.
    *
    * @param {unknown[]} profiles - Raw profiles returned from BrightData.
    *
@@ -435,7 +435,7 @@ User query: '${query}'`;
     }
 
     const client = new ChatOpenAI({
-      modelName: 'deepseek/deepseek-chat-v3.1',
+      modelName: 'anthropic/claude-3.5-sonnet',
       openAIApiKey: this.openrouterConfig.apiKey,
       configuration: {
         baseURL: this.openrouterConfig.baseUrl,
@@ -524,7 +524,7 @@ Where:
           };
         } catch (parseError) {
           this.logger.warn(
-            'Failed to parse DeepSeek profile analysis JSON, using fallback analysis',
+            'Failed to parse Anthropic profile analysis JSON, using fallback analysis',
             parseError,
           );
           this.sentry.sendException(parseError, {
@@ -584,7 +584,7 @@ Where:
         }
       } catch (error) {
         this.logger.error(
-          `Error analyzing Instagram profile with DeepSeek: ${profileUrl}`,
+          `Error analyzing Instagram profile with Anthropic: ${profileUrl}`,
           error,
         );
         this.sentry.sendException(error, { profileUrl });
