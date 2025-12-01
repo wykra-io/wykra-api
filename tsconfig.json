@@ -34,8 +34,11 @@
       "@libs/sentry": ["libs/sentry/src"],
       "@libs/sentry/*": ["libs/sentry/src/*"],
       "@libs/interceptors": ["libs/interceptors/src"],
-      "@libs/interceptors/*": ["libs/interceptors/src/*"]
+      "@libs/interceptors/*": ["libs/interceptors/src/*"],
+      "@libs/queue": ["libs/queue/src"],
+      "@libs/queue/*": ["libs/queue/src/*"]
     }
-  }
+  },
+  "exclude": ["node_modules", "dist", "build", "test"]
 }
 
