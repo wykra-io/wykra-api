@@ -45,6 +45,11 @@ export class TasksController {
       throw new HttpException('Task not found', HttpStatus.NOT_FOUND);
     }
 
+    const sanitizedProfiles = instagramProfiles.map(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      ({ raw, ...rest }) => rest,
+    );
+
     return {
       taskId: task.taskId,
       status: task.status,
@@ -52,7 +57,7 @@ export class TasksController {
       error: task.error,
       startedAt: task.startedAt,
       completedAt: task.completedAt,
-      instagramProfiles,
+      instagramProfiles: sanitizedProfiles,
     };
   }
 }
