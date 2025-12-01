@@ -687,14 +687,16 @@ Post ${idx + 1}:
 
 Please analyze this profile and provide a comprehensive analysis covering:
 
-1. **Topic/Niche**: What is the influencer's main topic or niche?
-2. **Sponsored Content**: Are they sponsored frequently? How often do you see sponsored content?
-3. **Content Authenticity**: Is the content authentic or does it seem AI-generated/artificial?
-4. **Follower Authenticity**: Are their followers likely real or do you see signs of fake/bought followers?
-5. **Visible Brands**: What brands are visible in their content or collaborations?
-6. **Engagement Strength**: How strong is the engagement? Is it consistent and genuine?
-7. **Posts Analysis**: Analyze the posting patterns, content quality, and consistency
-8. **Hashtags Statistics**: What hashtags do they use most? Are they relevant to their niche?
+1. **Core Themes/Topics**: What are the main themes of the profile (e.g., fashion/GRWM styling, personal style mixing casual and elegant pieces, travel and lifestyle, family/friendship moments, beauty and skincare routines, food and dining, cultural experiences and events)? How would you describe the creator's overall positioning?
+2. **Sponsored Content (Frequency & Fit)**: Are they sponsored frequently? How often do you see sponsored content and brand collaborations, and do these partnerships feel natural and on-brand?
+3. **Content Authenticity**: Does the content feel authentic and personal versus overly polished, AI-generated, or artificial? How genuine do the creator's style and recommendations feel?
+4. **Follower Authenticity**: Are their followers likely real or do you see signs of fake/bought followers (suspicious follower counts, low engagement relative to audience size, generic or bot-like comments)?
+5. **Visible Brands & Commercial Activity**: What brands are visible in their content or collaborations (for example, fashion/beauty or lifestyle brands)? Do they mix paid and organic mentions, and do they maintain authenticity in sponsored content?
+6. **Engagement Strength & Patterns**: How strong is the engagement overall (likes, comments, saves) and what patterns do you see (e.g., highest engagement on outfit transformations/GRWM reels, travel content, personal/relatable moments, high-quality fashion photography)? Comment on the quality of conversations in the comments and any signs of community building or brand recognition/reposts.
+7. **Posts vs Reels Performance**: Compare performance of different content formats (reels vs photo posts/carousels). Note typical views/likes ranges if visible, which formats drive better engagement (e.g., outfit transition reels, styling reels, photo carousels showing multiple angles/details), and how consistent that performance is.
+8. **Posting Consistency & Aesthetic**: Analyze how often they post, how consistent they are over time, and whether they maintain a regular mix of reels vs photo posts. Comment on recurring content series/hashtags (e.g., GRWM or custom series hashtags), overall aesthetic and visual consistency, and whether they tend to post during peak engagement times.
+9. **Posts Analysis (Content & Quality)**: Analyze the posting patterns in more depth: content quality, creativity, storytelling, use of transitions, framing, and how well the content showcases outfits, travel, lifestyle, and personal moments.
+10. **Hashtags Statistics & Series**: What hashtags do they use most? Are they relevant to their niche and content themes? Identify any branded/series hashtags (like GRWM or custom ones) and how they support discoverability and positioning.
 
 Return your analysis as a JSON object with the following structure:
 {
@@ -707,8 +709,8 @@ Return your analysis as a JSON object with the following structure:
   'followerAuthenticity': '<likely real/likely fake/mixed>',
   'visibleBrands': ['<brand1>', '<brand2>', ...],
   'engagementStrength': '<weak/moderate/strong>',
-  'postsAnalysis': '<detailed analysis of posts>',
-  'hashtagsStatistics': '<analysis of hashtag usage>'
+  'postsAnalysis': '<detailed analysis of posts, including posts vs reels performance, core themes, and posting consistency>',
+  'hashtagsStatistics': '<analysis of hashtag usage, including key themes and recurring/series hashtags>'
 }
 
 Quality Score Guidelines:
