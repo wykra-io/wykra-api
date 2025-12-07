@@ -7,6 +7,7 @@ import {
   InstagramSearchProfilesRepository,
   TasksRepository,
 } from '@libs/repositories';
+import { MetricsService } from '../metrics';
 
 @Injectable()
 export class TasksService {
@@ -14,6 +15,7 @@ export class TasksService {
     private readonly queueService: QueueService,
     private readonly tasksRepo: TasksRepository,
     private readonly instagramSearchProfilesRepo: InstagramSearchProfilesRepository,
+    private readonly metricsService: MetricsService,
   ) {}
 
   /**
@@ -41,6 +43,9 @@ export class TasksService {
       taskId,
       data,
     });
+
+    // Record task creation metric
+    this.metricsService.recordTaskCreated('generic');
 
     return taskId;
   }

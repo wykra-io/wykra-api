@@ -37,10 +37,78 @@ services:
     networks:
       - wykra-dev-network
 
+  # Prometheus - Metrics Collection (Dev)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: wykra-prometheus-dev
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_dev_data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - wykra-dev-network
+    depends_on:
+      - alertmanager
+
+  # Alertmanager - Alert Management (Dev)
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: wykra-alertmanager-dev
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    ports:
+      - "${ALERTMANAGER_PORT:-9094}:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_dev_data:/alertmanager
+    networks:
+      - wykra-dev-network
+
+  # Grafana - Visualization (Dev)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wykra-grafana-dev
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3002}
+    ports:
+      - "${GRAFANA_PORT:-3002}:3000"
+    volumes:
+      - grafana_dev_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks:
+      - wykra-dev-network
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_dev_data:
     driver: local
   redis_dev_data:
+    driver: local
+  prometheus_dev_data:
+    driver: local
+  alertmanager_dev_data:
+    driver: local
+  grafana_dev_data:
     driver: local
 
 networks:

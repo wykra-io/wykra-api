@@ -123,6 +123,165 @@ Execute migrations via Compose:
 docker-compose exec api npm run migration:run
 ```
 
+### Monitoring Stack (Prometheus + Alertmanager + Grafana)
+
+The project includes a complete monitoring stack for metrics collection, alerting, and visualization.
+
+**Start the monitoring stack:**
+
+```bash
+# Production
+docker-compose up -d prometheus alertmanager grafana
+
+# Development (uses different ports)
+docker-compose -f docker-compose.dev.yml up -d prometheus alertmanager grafana
+```
+
+**Access the services:**
+
+- **Grafana** (Visualization):
+  - Production: http://localhost:3001
+  - Development: http://localhost:3002
+  - Default credentials: `admin` / `admin` (change on first login)
+
+- **Prometheus** (Metrics):
+  - Production: http://localhost:9090
+  - Development: http://localhost:9091
+  - Query metrics, view targets, and check alert rules
+
+- **Alertmanager** (Alerts):
+  - Production: http://localhost:9093
+  - Development: http://localhost:9094
+  - View active alerts and silence rules
+
+**API Metrics Endpoint:**
+
+Your API automatically exposes metrics at:
+```
+http://localhost:3011/metrics
+```
+
+Prometheus scrapes this endpoint every 15 seconds to collect:
+- HTTP request rates and durations
+- Error rates by status code
+- CPU and memory usage
+- Custom application metrics
+
+**Using Grafana:**
+
+1. **Login**: Use default credentials (`admin`/`admin`) or your configured credentials
+2. **View Dashboard**: The "Wykra API Dashboard" is automatically provisioned and includes:
+   - Request rate graphs
+   - Error rate monitoring
+   - Response time percentiles (p50, p95)
+   - Memory and CPU usage
+   - Active alerts count
+3. **Explore Metrics**: Go to Explore → Select Prometheus datasource → Write PromQL queries
+4. **Create Custom Dashboards**: Build your own visualizations using the available metrics
+
+**Available Metrics:**
+
+- `http_requests_total` - Total HTTP requests by method, route, and status
+- `http_request_duration_seconds` - Request duration histogram
+- `http_request_errors_total` - Total HTTP errors
+- `tasks_created_total` - Total number of tasks created
+- `tasks_completed_total` - Total number of tasks completed successfully
+- `tasks_failed_total` - Total number of tasks that failed
+- `task_processing_duration_seconds` - Task processing duration histogram
+- `tasks_status_total` - Total number of tasks by status (pending, running, completed, failed)
+- `process_cpu_user_seconds_total` - CPU usage
+- `process_resident_memory_bytes` - Memory usage
+- Plus all default Node.js process metrics
+
+**Task Metrics Queries (Prometheus):**
+
+```promql
+# All tasks - creation rate
+rate(tasks_created_total[5m])
+
+# Instagram search tasks - creation rate
+rate(tasks_created_total{task_type="instagram_search"}[5m])
+
+# Generic tasks - creation rate
+rate(tasks_created_total{task_type="generic"}[5m])
+
+# Task completion rate (all types)
+rate(tasks_completed_total[5m])
+
+# Instagram search tasks - completion rate
+rate(tasks_completed_total{task_type="instagram_search"}[5m])
+
+# Task failure rate (all types)
+rate(tasks_failed_total[5m])
+
+# Instagram search tasks - failure rate
+rate(tasks_failed_total{task_type="instagram_search"}[5m])
+
+# Task success rate by type
+rate(tasks_completed_total[5m]) / rate(tasks_created_total[5m])
+
+# Instagram search success rate
+rate(tasks_completed_total{task_type="instagram_search"}[5m]) / rate(tasks_created_total{task_type="instagram_search"}[5m])
+
+# Average task processing time by type
+rate(task_processing_duration_seconds_sum[5m]) / rate(task_processing_duration_seconds_count[5m])
+
+# Instagram search processing time (95th percentile)
+histogram_quantile(0.95, rate(task_processing_duration_seconds_bucket{task_type="instagram_search"}[5m]))
+
+# Current task status distribution by type
+sum(tasks_status_total) by (status, task_type)
+
+# Instagram search endpoint request rate
+rate(http_requests_total{route="/api/v1/instagram/search"}[5m])
+
+# Task endpoint request rate
+rate(http_requests_total{route=~"/api/v1/tasks.*"}[5m])
+```
+
+**Configuring Alerts:**
+
+1. **Edit Alert Rules**: Modify `monitoring/prometheus/alerts.yml` to customize alert conditions
+2. **Configure Notifications**: Edit `monitoring/alertmanager/alertmanager.yml` to add:
+   - Slack webhooks
+   - Email notifications
+   - Custom webhooks
+   - PagerDuty integration
+
+Example Slack configuration:
+```yaml
+slack_configs:
+  - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+    channel: '#alerts'
+    title: 'Alert: {{ .GroupLabels.alertname }}'
+    text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+```
+
+**Pre-configured Alerts:**
+
+- **HighErrorRate**: Triggers when error rate > 5% for 5 minutes
+- **HighResponseTime**: Triggers when p95 response time > 2s for 5 minutes
+- **ServiceDown**: Triggers when API is unreachable for 1 minute
+- **HighMemoryUsage**: Triggers when memory > 1GB for 5 minutes
+- **HighCPUUsage**: Triggers when CPU usage > 80% for 5 minutes
+
+**Troubleshooting:**
+
+- **Metrics not appearing?** Check that:
+  - API is running and accessible
+  - Prometheus can reach `api:3011/metrics` (check Targets in Prometheus UI)
+  - API container is on the same Docker network
+
+- **Grafana shows "No data"?**
+  - Verify Prometheus datasource is configured (should be auto-provisioned)
+  - Check Prometheus is running and has data
+  - Ensure time range in Grafana includes recent data
+
+- **Alerts not firing?**
+  - Check alert rules in Prometheus → Alerts
+  - Verify Alertmanager is running and connected to Prometheus
+  - Check Alertmanager logs: `docker-compose logs alertmanager`
+
 </details>
 
 ### Try the API

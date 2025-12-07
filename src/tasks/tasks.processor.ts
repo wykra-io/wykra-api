@@ -5,6 +5,7 @@ import { Job } from 'bull';
 import { QueueName } from '@libs/queue';
 import { TaskStatus } from '@libs/entities';
 import { TasksRepository } from '@libs/repositories';
+import { MetricsService } from '../metrics';
 
 interface TaskJobData {
   taskId: string;
@@ -15,7 +16,10 @@ interface TaskJobData {
 export class TasksProcessor {
   private readonly logger = new Logger(TasksProcessor.name);
 
-  constructor(private readonly tasksRepo: TasksRepository) {}
+  constructor(
+    private readonly tasksRepo: TasksRepository,
+    private readonly metricsService: MetricsService,
+  ) {}
 
   /**
    * Processes a background task that runs for 1 minute.
@@ -28,6 +32,8 @@ export class TasksProcessor {
   public async runTask(job: Job<TaskJobData>): Promise<void> {
     const { taskId, data } = job.data;
 
+    const startTime = Date.now();
+    
     try {
       // Update task status to running
       await this.tasksRepo.update(taskId, {
@@ -36,9 +42,9 @@ export class TasksProcessor {
       });
 
       this.logger.log(`Task ${taskId} started`);
+      this.metricsService.recordTaskStatusChange('running', 'generic');
 
       // Simulate work for 1 minute (60 seconds)
-      const startTime = Date.now();
       const duration = 60 * 1000; // 1 minute in milliseconds
 
       // Custom logic here - this is where you can add your specific task logic
@@ -59,6 +65,7 @@ export class TasksProcessor {
 
       // Task completed successfully
       const result = `Task completed successfully. Processed data: ${data || 'no data provided'}`;
+      const processingDuration = (Date.now() - startTime) / 1000;
 
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Completed,
@@ -66,8 +73,13 @@ export class TasksProcessor {
         completedAt: new Date(),
       });
 
+      // Record task completion metric
+      this.metricsService.recordTaskCompleted(processingDuration, 'generic');
+
       this.logger.log(`Task ${taskId} completed successfully`);
     } catch (error) {
+      const processingDuration = (Date.now() - startTime) / 1000;
+      
       this.logger.error(`Task ${taskId} failed: ${error.message}`, error.stack);
 
       await this.tasksRepo.update(taskId, {
@@ -75,6 +87,9 @@ export class TasksProcessor {
         error: error.message,
         completedAt: new Date(),
       });
+
+      // Record task failure metric
+      this.metricsService.recordTaskFailed(processingDuration, 'generic');
     }
   }
 }

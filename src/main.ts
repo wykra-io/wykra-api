@@ -11,7 +11,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(AppConfigService);
 
-  app.setGlobalPrefix(config.globalPrefix);
+  app.setGlobalPrefix(config.globalPrefix, {
+    exclude: ['/metrics'],
+  });
 
   app.useGlobalInterceptors(new TransformInterceptor());
 

@@ -10,6 +10,7 @@ import {
 } from '@libs/repositories';
 import { SentryClientService } from '@libs/sentry';
 
+import { MetricsService } from '../metrics';
 import { PerplexityService } from '../perplexity';
 import { InstagramService } from './instagram.service';
 
@@ -28,6 +29,7 @@ export class InstagramProcessor {
     private readonly perplexityService: PerplexityService,
     private readonly instagramService: InstagramService,
     private readonly searchProfilesRepo: InstagramSearchProfilesRepository,
+    private readonly metricsService: MetricsService,
   ) {}
 
   /**
@@ -40,6 +42,7 @@ export class InstagramProcessor {
   @Process('search')
   public async search(job: Job<InstagramSearchJobData>): Promise<void> {
     const { taskId, query } = job.data;
+    const startTime = Date.now();
 
     try {
       // Update task status to running
@@ -51,6 +54,7 @@ export class InstagramProcessor {
       this.logger.log(
         `Instagram search task ${taskId} started for query: ${query}`,
       );
+      this.metricsService.recordTaskStatusChange('running', 'instagram_search');
 
       // First step: extract structured context from the user query
       const context = await this.instagramService.extractSearchContext(query);
@@ -231,17 +235,26 @@ Return only the list of URLs with no extra text.`;
         model: stage1Response.model,
       });
 
+      const processingDuration = (Date.now() - startTime) / 1000;
+
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Completed,
         result,
         completedAt: new Date(),
       });
 
+      // Record task completion metric
+      this.metricsService.recordTaskCompleted(
+        processingDuration,
+        'instagram_search',
+      );
+
       this.logger.log(`Instagram search task ${taskId} completed successfully`);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
+      const processingDuration = (Date.now() - startTime) / 1000;
 
       this.logger.error(
         `Instagram search task ${taskId} failed: ${errorMessage}`,
@@ -253,6 +266,9 @@ Return only the list of URLs with no extra text.`;
         error: errorMessage,
         completedAt: new Date(),
       });
+
+      // Record task failure metric
+      this.metricsService.recordTaskFailed(processingDuration, 'instagram_search');
     }
   }
 }

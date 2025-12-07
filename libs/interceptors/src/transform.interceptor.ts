@@ -22,7 +22,13 @@ export class TransformInterceptor<T>
     next: CallHandler,
   ): Observable<Response<T> | T> {
     const ctx = context.switchToHttp();
+    const request = ctx.getRequest();
     const statusCode = ctx.getResponse().statusCode as number;
+
+    // Skip transformation for metrics endpoint (Prometheus format)
+    if (request.url === '/metrics' || request.path === '/metrics') {
+      return next.handle();
+    }
 
     return next.handle().pipe(
       map((value) => {

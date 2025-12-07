@@ -16,6 +16,7 @@ import {
   InstagramSearchProfilesRepository,
   TasksRepository,
 } from '@libs/repositories';
+import { MetricsService } from '../metrics';
 
 import {
   InstagramAnalysisData,
@@ -51,6 +52,7 @@ export class InstagramService {
     private readonly queueService: QueueService,
     private readonly tasksRepo: TasksRepository,
     private readonly searchProfilesRepo: InstagramSearchProfilesRepository,
+    private readonly metricsService: MetricsService,
   ) {
     this.httpClient = axios.create({
       baseURL: this.brightdataConfig.baseUrl,
@@ -837,6 +839,9 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
       taskId,
       query,
     });
+
+    // Record task creation metric
+    this.metricsService.recordTaskCreated('instagram_search');
 
     return taskId;
   }

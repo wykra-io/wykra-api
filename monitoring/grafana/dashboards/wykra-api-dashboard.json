@@ -1,0 +1,159 @@
+{
+  "uid": "wykra-api-dashboard",
+  "title": "Wykra API Dashboard",
+  "tags": ["wykra", "api"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 0,
+  "refresh": "10s",
+  "panels": [
+    {
+      "title": "Request Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "rate(http_requests_total[5m])",
+          "legendFormat": "{{method}} {{route}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Error Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{status=~\"5..\"}[5m])",
+          "legendFormat": "{{status}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Response Time (95th percentile)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50",
+          "refId": "B",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes / 1024 / 1024",
+          "legendFormat": "Memory (MB)",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "CPU Usage",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {
+          "expr": "rate(process_cpu_user_seconds_total[5m]) * 100",
+          "legendFormat": "CPU %",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Task Creation Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [
+        {
+          "expr": "rate(tasks_created_total[5m])",
+          "legendFormat": "{{task_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Task Completion Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [
+        {
+          "expr": "rate(tasks_completed_total[5m])",
+          "legendFormat": "{{task_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Task Failure Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [
+        {
+          "expr": "rate(tasks_failed_total[5m])",
+          "legendFormat": "{{task_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Task Processing Time (p95)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(task_processing_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95 - {{task_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Task Success Rate (%)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "targets": [
+        {
+          "expr": "rate(tasks_completed_total[5m]) / rate(tasks_created_total[5m]) * 100",
+          "legendFormat": "{{task_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Active Alerts",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\"})",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    }
+  ]
+}
