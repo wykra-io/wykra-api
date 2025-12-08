@@ -10,6 +10,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OpenrouterConfigService } from '@libs/config';
 import { SentryClientService } from '@libs/sentry';
 
+import { MetricsService } from '../metrics';
 import { PerplexityChatDTO } from './dto';
 import {
   PerplexityChatResponse,
@@ -35,6 +36,7 @@ export class PerplexityService {
   constructor(
     private readonly openrouterConfig: OpenrouterConfigService,
     private readonly sentry: SentryClientService,
+    private readonly metricsService: MetricsService,
   ) {
     // Base configuration for creating ChatOpenAI instances
     this.baseConfig = {
@@ -99,6 +101,7 @@ export class PerplexityService {
       const maxIterations = 5; // Prevent infinite loops
       let iteration = 0;
       let fullContent = '';
+      const llmStartTime = Date.now();
 
       // Continue reasoning loop
       while (iteration < maxIterations) {
@@ -112,15 +115,38 @@ export class PerplexityService {
         const responseContent = response.content as string;
         fullContent += (fullContent ? '\n\n' : '') + responseContent;
 
-        // Accumulate usage
-        if (response.response_metadata?.usage) {
-          totalUsage.promptTokens +=
-            response.response_metadata.usage.prompt_tokens || 0;
-          totalUsage.completionTokens +=
-            response.response_metadata.usage.completion_tokens || 0;
-          totalUsage.totalTokens +=
-            response.response_metadata.usage.total_tokens || 0;
+        // Accumulate usage from multiple possible locations
+        let iterationPromptTokens = 0;
+        let iterationCompletionTokens = 0;
+        let iterationTotalTokens = 0;
+
+        // Check response_metadata.tokenUsage (camelCase - Anthropic format)
+        if (response.response_metadata?.tokenUsage) {
+          const tokenUsage = response.response_metadata.tokenUsage;
+          iterationPromptTokens = Number(tokenUsage.promptTokens) || 0;
+          iterationCompletionTokens = Number(tokenUsage.completionTokens) || 0;
+          iterationTotalTokens = Number(tokenUsage.totalTokens) || 0;
         }
+        // Check usage_metadata (snake_case - LangChain format)
+        else if (response.usage_metadata) {
+          iterationPromptTokens =
+            Number(response.usage_metadata.input_tokens) || 0;
+          iterationCompletionTokens =
+            Number(response.usage_metadata.output_tokens) || 0;
+          iterationTotalTokens =
+            Number(response.usage_metadata.total_tokens) || 0;
+        }
+        // Fallback: check response_metadata.usage (snake_case - OpenAI format)
+        else if (response.response_metadata?.usage) {
+          const usage = response.response_metadata.usage;
+          iterationPromptTokens = Number(usage.prompt_tokens) || 0;
+          iterationCompletionTokens = Number(usage.completion_tokens) || 0;
+          iterationTotalTokens = Number(usage.total_tokens) || 0;
+        }
+
+        totalUsage.promptTokens += iterationPromptTokens;
+        totalUsage.completionTokens += iterationCompletionTokens;
+        totalUsage.totalTokens += iterationTotalTokens;
 
         // Check finish reason to determine if we should continue
         const finishReason =
@@ -173,6 +199,36 @@ export class PerplexityService {
         );
       }
 
+      const llmDuration = (Date.now() - llmStartTime) / 1000;
+
+      // Record token usage metrics (always record the call, even if usage is 0)
+      this.metricsService.recordLLMCall(model, 'perplexity');
+      this.metricsService.recordLLMCallDuration(
+        model,
+        'perplexity',
+        llmDuration,
+        'success',
+      );
+
+      if (totalUsage.totalTokens > 0) {
+        this.metricsService.recordLLMTokenUsage(
+          model,
+          'perplexity',
+          totalUsage.promptTokens,
+          totalUsage.completionTokens,
+          totalUsage.totalTokens,
+        );
+        this.metricsService.recordLLMTokensPerRequest(
+          'search',
+          totalUsage.promptTokens,
+          totalUsage.completionTokens,
+        );
+      } else {
+        // Record with 0 values if usage data is missing
+        this.metricsService.recordLLMTokenUsage(model, 'perplexity', 0, 0, 0);
+        this.metricsService.recordLLMTokensPerRequest('search', 0, 0);
+      }
+
       this.logger.log(
         `Successfully received response from Perplexity (${model}) after ${iteration} iteration(s)`,
       );
@@ -187,6 +243,12 @@ export class PerplexityService {
         },
       };
     } catch (error) {
+      this.metricsService.recordLLMError(
+        dto.model || this.defaultModel,
+        'perplexity',
+        'api_error',
+      );
+
       this.logger.error('Error calling Perplexity via OpenRouter:', error);
       this.sentry.sendException(error, {
         message: dto.message,

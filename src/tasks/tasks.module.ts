@@ -8,7 +8,7 @@ import {
   TasksRepository,
 } from '@libs/repositories';
 
-import { MetricsModule } from '../metrics';
+import { MetricsModule, MetricsService } from '../metrics';
 import { TasksController } from './tasks.controller';
 import { TasksProcessor } from './tasks.processor';
 import { TasksService } from './tasks.service';
@@ -25,6 +25,10 @@ import { TasksService } from './tasks.service';
     TasksProcessor,
     TasksRepository,
     InstagramSearchProfilesRepository,
+    {
+      provide: 'MetricsService',
+      useExisting: MetricsService,
+    },
   ],
 })
 export class TasksModule {}

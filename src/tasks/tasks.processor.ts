@@ -33,7 +33,12 @@ export class TasksProcessor {
     const { taskId, data } = job.data;
 
     const startTime = Date.now();
-    
+
+    // Track queue wait time
+    const queuedAt = job.timestamp; // Time when job was added to queue
+    const waitTime = (startTime - queuedAt) / 1000;
+    this.metricsService.recordTaskQueueWaitTime('generic', 'tasks', waitTime);
+
     try {
       // Update task status to running
       await this.tasksRepo.update(taskId, {
@@ -79,7 +84,7 @@ export class TasksProcessor {
       this.logger.log(`Task ${taskId} completed successfully`);
     } catch (error) {
       const processingDuration = (Date.now() - startTime) / 1000;
-      
+
       this.logger.error(`Task ${taskId} failed: ${error.message}`, error.stack);
 
       await this.tasksRepo.update(taskId, {

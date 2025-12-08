@@ -15,4 +15,3 @@ import openrouterConfiguration from './configuration';
   exports: [OpenrouterConfigService],
 })
 export class OpenrouterConfigModule {}
-

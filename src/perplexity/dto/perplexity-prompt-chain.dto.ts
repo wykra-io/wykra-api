@@ -4,4 +4,3 @@ export class PerplexitySearchChainDTO {
   @IsString()
   query: string;
 }
-

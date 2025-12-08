@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Post, Body, HttpStatus, HttpException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Body,
+  HttpStatus,
+  HttpException,
+} from '@nestjs/common';
 
 import { CreateTaskDto } from './dto';
 import { TasksService } from './tasks.service';
@@ -15,7 +23,9 @@ export class TasksController {
    * @returns {Promise<{ taskId: string }>} The created task ID.
    */
   @Post()
-  public async createTask(@Body() dto: CreateTaskDto): Promise<{ taskId: string }> {
+  public async createTask(
+    @Body() dto: CreateTaskDto,
+  ): Promise<{ taskId: string }> {
     const taskId = await this.tasksService.createTask(dto.data);
     return { taskId };
   }
@@ -37,9 +47,8 @@ export class TasksController {
    */
   @Get(':id')
   public async getTaskStatus(@Param('id') id: string) {
-    const { task, instagramProfiles } = await this.tasksService.getTaskStatus(
-      id,
-    );
+    const { task, instagramProfiles } =
+      await this.tasksService.getTaskStatus(id);
 
     if (!task) {
       throw new HttpException('Task not found', HttpStatus.NOT_FOUND);
@@ -61,4 +70,3 @@ export class TasksController {
     };
   }
 }
-

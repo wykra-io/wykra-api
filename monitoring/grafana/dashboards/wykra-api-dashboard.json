@@ -34,20 +34,14 @@
       ]
     },
     {
-      "title": "Response Time (95th percentile)",
+      "title": "Response Time (Average)",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
-          "legendFormat": "p95",
+          "expr": "rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])",
+          "legendFormat": "Average - {{method}} {{route}}",
           "refId": "A",
-          "datasource": {"uid": "Prometheus", "type": "prometheus"}
-        },
-        {
-          "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
-          "legendFormat": "p50",
-          "refId": "B",
           "datasource": {"uid": "Prometheus", "type": "prometheus"}
         }
       ]
@@ -118,13 +112,13 @@
       ]
     },
     {
-      "title": "Task Processing Time (p95)",
+      "title": "Task Processing Time (Average)",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(task_processing_duration_seconds_bucket[5m]))",
-          "legendFormat": "p95 - {{task_type}}",
+          "expr": "rate(task_processing_duration_seconds_sum[5m]) / rate(task_processing_duration_seconds_count[5m])",
+          "legendFormat": "Average - {{task_type}}",
           "refId": "A",
           "datasource": {"uid": "Prometheus", "type": "prometheus"}
         }
@@ -150,6 +144,292 @@
       "targets": [
         {
           "expr": "count(ALERTS{alertstate=\"firing\"})",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "LLM Calls (Total)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 48},
+      "targets": [
+        {
+          "expr": "sum by (model) (llm_calls_total{service!=\"\", model!=\"\"})",
+          "legendFormat": "{{model}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "LLM Calls Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48},
+      "targets": [
+        {
+          "expr": "sum by (model) (rate(llm_calls_total{service!=\"\", model!=\"\"}[5m]))",
+          "legendFormat": "{{model}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "LLM Token Usage (Total)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 56},
+      "targets": [
+        {
+          "expr": "sum by (model) (llm_prompt_tokens_total{service!=\"\", model!=\"\"})",
+          "legendFormat": "Prompt - {{model}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        },
+        {
+          "expr": "sum by (model) (llm_completion_tokens_total{service!=\"\", model!=\"\"})",
+          "legendFormat": "Completion - {{model}}",
+          "refId": "B",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        },
+        {
+          "expr": "sum by (model) (llm_total_tokens_total{service!=\"\", model!=\"\"})",
+          "legendFormat": "Total - {{model}}",
+          "refId": "C",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "LLM Token Usage Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 56},
+      "targets": [
+        {
+          "expr": "sum by (model) (rate(llm_prompt_tokens_total{service!=\"\", model!=\"\"}[5m]))",
+          "legendFormat": "Prompt - {{model}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        },
+        {
+          "expr": "sum by (model) (rate(llm_completion_tokens_total{service!=\"\", model!=\"\"}[5m]))",
+          "legendFormat": "Completion - {{model}}",
+          "refId": "B",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        },
+        {
+          "expr": "sum by (model) (rate(llm_total_tokens_total{service!=\"\", model!=\"\"}[5m]))",
+          "legendFormat": "Total - {{model}}",
+          "refId": "C",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Average Input Tokens per Request",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 64},
+      "targets": [
+        {
+          "expr": "rate(llm_input_tokens_per_request_sum[5m]) / rate(llm_input_tokens_per_request_count[5m])",
+          "legendFormat": "Average - {{request_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ],
+      "nullPointMode": "null"
+    },
+    {
+      "title": "Average Output Tokens per Request",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 64},
+      "targets": [
+        {
+          "expr": "rate(llm_output_tokens_per_request_sum[5m]) / rate(llm_output_tokens_per_request_count[5m])",
+          "legendFormat": "Average - {{request_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ],
+      "nullPointMode": "null"
+    },
+    {
+      "title": "BrightData Calls (Total)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 72},
+      "targets": [
+        {
+          "expr": "brightdata_calls_total",
+          "legendFormat": "{{dataset}} - {{operation}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "BrightData Calls Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 72},
+      "targets": [
+        {
+          "expr": "rate(brightdata_calls_total[5m])",
+          "legendFormat": "{{dataset}} - {{operation}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "BrightData Call Duration (Average)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 80},
+      "targets": [
+        {
+          "expr": "rate(brightdata_call_duration_seconds_sum[5m]) / rate(brightdata_call_duration_seconds_count[5m])",
+          "legendFormat": "Average - {{dataset}} - {{operation}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "BrightData Error Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 80},
+      "targets": [
+        {
+          "expr": "rate(brightdata_call_errors_total[5m])",
+          "legendFormat": "{{dataset}} - {{operation}} - {{error_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "LLM Call Duration (Average)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 88},
+      "targets": [
+        {
+          "expr": "rate(llm_call_duration_seconds_sum[5m]) / rate(llm_call_duration_seconds_count[5m])",
+          "legendFormat": "{{model}} - {{service}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "LLM Error Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 88},
+      "targets": [
+        {
+          "expr": "rate(llm_call_errors_total[5m])",
+          "legendFormat": "{{model}} - {{service}} - {{error_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Database Query Duration (Average)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 96},
+      "targets": [
+        {
+          "expr": "rate(db_query_duration_seconds_sum[5m]) / rate(db_query_duration_seconds_count[5m])",
+          "legendFormat": "{{operation}} - {{entity}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Database Query Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 96},
+      "targets": [
+        {
+          "expr": "rate(db_queries_total[5m])",
+          "legendFormat": "{{operation}} - {{entity}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Database Error Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 104},
+      "targets": [
+        {
+          "expr": "rate(db_query_errors_total[5m])",
+          "legendFormat": "{{operation}} - {{entity}} - {{error_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Redis Operation Duration (Average)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 104},
+      "targets": [
+        {
+          "expr": "rate(redis_operation_duration_seconds_sum[5m]) / rate(redis_operation_duration_seconds_count[5m])",
+          "legendFormat": "{{operation}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Redis Operation Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 112},
+      "targets": [
+        {
+          "expr": "rate(redis_operations_total[5m])",
+          "legendFormat": "{{operation}} - {{status}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Redis Error Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 112},
+      "targets": [
+        {
+          "expr": "rate(redis_operation_errors_total[5m])",
+          "legendFormat": "{{operation}} - {{error_type}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Task Queue Size",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 120},
+      "targets": [
+        {
+          "expr": "task_queue_size",
+          "legendFormat": "{{queue_name}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Task Queue Wait Time (Average)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 120},
+      "targets": [
+        {
+          "expr": "rate(task_queue_wait_time_seconds_sum[5m]) / rate(task_queue_wait_time_seconds_count[5m])",
+          "legendFormat": "{{task_type}} - {{queue_name}}",
           "refId": "A",
           "datasource": {"uid": "Prometheus", "type": "prometheus"}
         }

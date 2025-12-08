@@ -14,4 +14,3 @@ export abstract class Model {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp', select: false })
   updatedAt!: Date;
 }
-

@@ -4,6 +4,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 import { BrightdataConfigService, BrightdataDataset } from '@libs/config';
 import { SentryClientService } from '@libs/sentry';
 
+import { MetricsService } from '../metrics';
 import { GoogleSerpDTO, GoogleAiModeItemDTO, PerplexitySearchDTO } from './dto';
 import {
   GoogleSerpResponse,
@@ -20,6 +21,7 @@ export class BrightdataService {
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
     private readonly sentry: SentryClientService,
+    private readonly metricsService: MetricsService,
   ) {
     this.httpClient = axios.create({
       baseURL: this.brightdataConfig.baseUrl,
@@ -39,6 +41,7 @@ export class BrightdataService {
    * @returns {Promise<GoogleSerpResponse>} The SERP results from BrightData.
    */
   public async getGoogleSerp(dto: GoogleSerpDTO): Promise<GoogleSerpResponse> {
+    const startTime = Date.now();
     try {
       this.logger.log(`Fetching Google SERP data for keyword: ${dto.keyword}`);
 
@@ -71,6 +74,14 @@ export class BrightdataService {
         },
       );
 
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.GOOGLE_SERP,
+        'get_google_serp',
+        duration,
+        'success',
+      );
+
       this.logger.log(
         `Successfully fetched SERP data for keyword: ${dto.keyword}`,
       );
@@ -83,12 +94,26 @@ export class BrightdataService {
         results,
       };
     } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.GOOGLE_SERP,
+        'get_google_serp',
+        duration,
+        'error',
+      );
+
       const axiosError = error as AxiosError;
 
       if (axiosError.response) {
         const status = axiosError.response.status;
         const statusText = axiosError.response.statusText;
         const responseData = axiosError.response.data;
+
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.GOOGLE_SERP,
+          'get_google_serp',
+          `http_${status}`,
+        );
 
         this.logger.error(
           `BrightData API error for keyword ${dto.keyword}: ${status} - ${statusText}`,
@@ -101,6 +126,12 @@ export class BrightdataService {
           `Failed to fetch Google SERP: ${statusText} (${status})`,
         );
       } else if (axiosError.request) {
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.GOOGLE_SERP,
+          'get_google_serp',
+          'no_response',
+        );
+
         this.logger.error(
           `No response from BrightData API for keyword ${dto.keyword}`,
         );
@@ -109,6 +140,12 @@ export class BrightdataService {
 
         throw new Error('No response from Google SERP API');
       } else {
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.GOOGLE_SERP,
+          'get_google_serp',
+          'request_setup',
+        );
+
         this.logger.error(
           `Error setting up request for keyword ${dto.keyword}:`,
           axiosError.message,
@@ -191,6 +228,7 @@ export class BrightdataService {
   public async getGoogleAiMode(
     dto: GoogleAiModeItemDTO,
   ): Promise<GoogleAiModeResponse> {
+    const startTime = Date.now();
     try {
       this.logger.log(`Fetching Google AI Mode data for prompt: ${dto.prompt}`);
 
@@ -220,6 +258,14 @@ export class BrightdataService {
         },
       );
 
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.GOOGLE_AI_SEARCH,
+        'get_google_ai_mode',
+        duration,
+        'success',
+      );
+
       this.logger.log(
         `Successfully fetched AI Mode data for prompt: ${dto.prompt}`,
       );
@@ -228,12 +274,26 @@ export class BrightdataService {
         results: response.data,
       };
     } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.GOOGLE_AI_SEARCH,
+        'get_google_ai_mode',
+        duration,
+        'error',
+      );
+
       const axiosError = error as AxiosError;
 
       if (axiosError.response) {
         const status = axiosError.response.status;
         const statusText = axiosError.response.statusText;
         const responseData = axiosError.response.data;
+
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.GOOGLE_AI_SEARCH,
+          'get_google_ai_mode',
+          `http_${status}`,
+        );
 
         this.logger.error(
           `BrightData API error for AI Mode: ${status} - ${statusText}`,
@@ -246,12 +306,24 @@ export class BrightdataService {
           `Failed to fetch Google AI Mode: ${statusText} (${status})`,
         );
       } else if (axiosError.request) {
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.GOOGLE_AI_SEARCH,
+          'get_google_ai_mode',
+          'no_response',
+        );
+
         this.logger.error(`No response from BrightData API for AI Mode`);
 
         this.sentry.sendException(error, { prompt: dto.prompt });
 
         throw new Error('No response from Google AI Mode API');
       } else {
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.GOOGLE_AI_SEARCH,
+          'get_google_ai_mode',
+          'request_setup',
+        );
+
         this.logger.error(
           `Error setting up request for AI Mode:`,
           axiosError.message,
@@ -276,6 +348,7 @@ export class BrightdataService {
   public async getPerplexitySearch(
     dto: PerplexitySearchDTO,
   ): Promise<PerplexitySearchResponse> {
+    const startTime = Date.now();
     try {
       this.logger.log(
         `Fetching Perplexity search data for prompt: ${dto.prompt}`,
@@ -307,6 +380,14 @@ export class BrightdataService {
         },
       );
 
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.PERPLEXITY,
+        'get_perplexity_search',
+        duration,
+        'success',
+      );
+
       this.logger.log(
         `Successfully fetched Perplexity search data for prompt: ${dto.prompt}`,
       );
@@ -315,12 +396,26 @@ export class BrightdataService {
         results: response.data,
       };
     } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.PERPLEXITY,
+        'get_perplexity_search',
+        duration,
+        'error',
+      );
+
       const axiosError = error as AxiosError;
 
       if (axiosError.response) {
         const status = axiosError.response.status;
         const statusText = axiosError.response.statusText;
         const responseData = axiosError.response.data;
+
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.PERPLEXITY,
+          'get_perplexity_search',
+          `http_${status}`,
+        );
 
         this.logger.error(
           `BrightData API error for Perplexity search: ${status} - ${statusText}`,
@@ -333,6 +428,12 @@ export class BrightdataService {
           `Failed to fetch Perplexity search: ${statusText} (${status})`,
         );
       } else if (axiosError.request) {
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.PERPLEXITY,
+          'get_perplexity_search',
+          'no_response',
+        );
+
         this.logger.error(
           `No response from BrightData API for Perplexity search`,
         );
@@ -341,6 +442,12 @@ export class BrightdataService {
 
         throw new Error('No response from Perplexity search API');
       } else {
+        this.metricsService.recordBrightdataError(
+          BrightdataDataset.PERPLEXITY,
+          'get_perplexity_search',
+          'request_setup',
+        );
+
         this.logger.error(
           `Error setting up request for Perplexity search:`,
           axiosError.message,
