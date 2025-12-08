@@ -123,7 +123,10 @@ Execute migrations via Compose:
 docker-compose exec api npm run migration:run
 ```
 
-### Monitoring Stack (Prometheus + Alertmanager + Grafana)
+</details>
+
+<details>
+<summary><strong>Monitoring Stack (Prometheus + Alertmanager + Grafana)</strong></summary>
 
 The project includes a complete monitoring stack for metrics collection, alerting, and visualization.
 
