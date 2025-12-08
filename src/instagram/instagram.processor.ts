@@ -10,6 +10,7 @@ import {
 } from '@libs/repositories';
 import { SentryClientService } from '@libs/sentry';
 
+import { MetricsService } from '../metrics';
 import { PerplexityService } from '../perplexity';
 import { InstagramService } from './instagram.service';
 
@@ -28,6 +29,7 @@ export class InstagramProcessor {
     private readonly perplexityService: PerplexityService,
     private readonly instagramService: InstagramService,
     private readonly searchProfilesRepo: InstagramSearchProfilesRepository,
+    private readonly metricsService: MetricsService,
   ) {}
 
   /**
@@ -40,6 +42,16 @@ export class InstagramProcessor {
   @Process('search')
   public async search(job: Job<InstagramSearchJobData>): Promise<void> {
     const { taskId, query } = job.data;
+    const startTime = Date.now();
+
+    // Track queue wait time
+    const queuedAt = job.timestamp; // Time when job was added to queue
+    const waitTime = (startTime - queuedAt) / 1000;
+    this.metricsService.recordTaskQueueWaitTime(
+      'instagram_search',
+      'instagram',
+      waitTime,
+    );
 
     try {
       // Update task status to running
@@ -51,6 +63,7 @@ export class InstagramProcessor {
       this.logger.log(
         `Instagram search task ${taskId} started for query: ${query}`,
       );
+      this.metricsService.recordTaskStatusChange('running', 'instagram_search');
 
       // First step: extract structured context from the user query
       const context = await this.instagramService.extractSearchContext(query);
@@ -134,6 +147,11 @@ Return only the list of URLs with no extra text.`;
        */
       let stage2Prompt: string | null = null;
       let stage2ResponseContent: string | null = null;
+      let stage2Usage: {
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+      } | null = null;
 
       if (parsedInstagramUrlsStage1.length < 5) {
         const baseInstruction = `Find public Instagram accounts ${locationPart} ${categoryPart}${followersPart}.`;
@@ -154,7 +172,24 @@ Return only the list of URLs with no extra text.`;
           message: stage2Prompt,
         });
 
+        // Metrics are already recorded in PerplexityService.chat()
+        // But we log the usage for debugging
+        this.logger.log(
+          `Stage 2 Perplexity call completed. Usage: ${JSON.stringify(stage2Response.usage)}`,
+        );
+
         stage2ResponseContent = stage2Response.content;
+        stage2Usage = stage2Response.usage
+          ? {
+              promptTokens: stage2Response.usage.promptTokens || 0,
+              completionTokens: stage2Response.usage.completionTokens || 0,
+              totalTokens: stage2Response.usage.totalTokens || 0,
+            }
+          : {
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+            };
 
         const allUrlsStage2 =
           typeof stage2ResponseContent === 'string'
@@ -214,6 +249,19 @@ Return only the list of URLs with no extra text.`;
             )
           : [];
 
+      // Calculate aggregate usage from all LLM calls
+      const stage1Usage = stage1Response.usage
+        ? {
+            promptTokens: stage1Response.usage.promptTokens || 0,
+            completionTokens: stage1Response.usage.completionTokens || 0,
+            totalTokens: stage1Response.usage.totalTokens || 0,
+          }
+        : {
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+          };
+
       // Task completed successfully
       const result = JSON.stringify({
         query,
@@ -227,9 +275,24 @@ Return only the list of URLs with no extra text.`;
         stage2Response: stage2ResponseContent,
         instagramUrls: combinedInstagramUrls,
         analyzedProfiles,
-        usage: stage1Response.usage,
+        usage: {
+          stage1: stage1Usage,
+          stage2: stage2Usage,
+          total: {
+            promptTokens:
+              (stage1Usage.promptTokens || 0) +
+              (stage2Usage?.promptTokens || 0),
+            completionTokens:
+              (stage1Usage.completionTokens || 0) +
+              (stage2Usage?.completionTokens || 0),
+            totalTokens:
+              (stage1Usage.totalTokens || 0) + (stage2Usage?.totalTokens || 0),
+          },
+        },
         model: stage1Response.model,
       });
+
+      const processingDuration = (Date.now() - startTime) / 1000;
 
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Completed,
@@ -237,11 +300,18 @@ Return only the list of URLs with no extra text.`;
         completedAt: new Date(),
       });
 
+      // Record task completion metric
+      this.metricsService.recordTaskCompleted(
+        processingDuration,
+        'instagram_search',
+      );
+
       this.logger.log(`Instagram search task ${taskId} completed successfully`);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
+      const processingDuration = (Date.now() - startTime) / 1000;
 
       this.logger.error(
         `Instagram search task ${taskId} failed: ${errorMessage}`,
@@ -253,6 +323,12 @@ Return only the list of URLs with no extra text.`;
         error: errorMessage,
         completedAt: new Date(),
       });
+
+      // Record task failure metric
+      this.metricsService.recordTaskFailed(
+        processingDuration,
+        'instagram_search',
+      );
     }
   }
 }

@@ -27,4 +27,3 @@ export class OpenrouterConfigService {
     return this.config.get<number>('openrouter.timeout', 60000);
   }
 }
-

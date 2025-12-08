@@ -29,4 +29,3 @@ export class AppConfigService {
     return this.config.get<string>('app.globalPrefix', 'api/v1');
   }
 }
-

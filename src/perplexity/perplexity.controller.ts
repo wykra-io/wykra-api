@@ -37,6 +37,6 @@ export class PerplexityController {
   public async searchChain(
     @Body() dto: PerplexitySearchChainDTO,
   ): Promise<PerplexityPromptChainResponse> {
-    return this.perplexityService.searchChain(dto.query as string);
+    return this.perplexityService.searchChain(dto.query);
   }
 }

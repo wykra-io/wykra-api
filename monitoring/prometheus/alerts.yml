@@ -1,0 +1,153 @@
+groups:
+  - name: wykra_api_alerts
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors per second for the last 5 minutes"
+
+      # High response time
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }} seconds"
+
+      # Service down
+      - alert: ServiceDown
+        expr: up{job="wykra-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service is down"
+          description: "Wykra API service has been down for more than 1 minute"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (process_resident_memory_bytes / 1024 / 1024) > 1024
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }} MB"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_user_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%"
+
+      # Example: Endpoint-specific alert (optional - uncomment and customize)
+      # - alert: HighErrorRateOnInstagramAnalysis
+      #   expr: rate(http_requests_total{route="/api/v1/instagram/analysis",status=~"5.."}[5m]) > 0.1
+      #   for: 5m
+      #   labels:
+      #     severity: critical
+      #   annotations:
+      #     summary: "High error rate on Instagram analysis endpoint"
+      #     description: "Error rate on /api/v1/instagram/analysis is {{ $value }} errors per second"
+
+      # High LLM error rate
+      - alert: HighLLMErrorRate
+        expr: rate(llm_call_errors_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High LLM error rate detected"
+          description: "LLM error rate is {{ $value }} for {{ $labels.model }} - {{ $labels.service }}"
+
+      # High database error rate
+      - alert: HighDatabaseErrorRate
+        expr: rate(db_query_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High database error rate"
+          description: "Database error rate is {{ $value }} for {{ $labels.operation }} - {{ $labels.entity }}"
+
+      # Slow database queries
+      - alert: SlowDatabaseQueries
+        expr: histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow database queries detected"
+          description: "95th percentile database query time is {{ $value }} seconds"
+
+      # High Redis error rate
+      - alert: HighRedisErrorRate
+        expr: rate(redis_operation_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High Redis error rate"
+          description: "Redis error rate is {{ $value }} for {{ $labels.operation }}"
+
+      # Large task queue backlog
+      - alert: LargeTaskQueueBacklog
+        expr: task_queue_size > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Large task queue backlog"
+          description: "Task queue {{ $labels.queue_name }} has {{ $value }} pending tasks"
+
+      # Long task queue wait time
+      - alert: LongTaskQueueWaitTime
+        expr: histogram_quantile(0.95, rate(task_queue_wait_time_seconds_bucket[5m])) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Long task queue wait time"
+          description: "95th percentile wait time in {{ $labels.queue_name }} is {{ $value }} seconds"
+
+      # High BrightData error rate
+      - alert: HighBrightDataErrorRate
+        expr: rate(brightdata_call_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High BrightData error rate"
+          description: "BrightData error rate is {{ $value }} for {{ $labels.dataset }} - {{ $labels.operation }}"
+
+      # Slow LLM calls
+      - alert: SlowLLMCalls
+        expr: histogram_quantile(0.95, rate(llm_call_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow LLM calls detected"
+          description: "95th percentile LLM call duration is {{ $value }} seconds for {{ $labels.model }}"
+
+      # High token usage rate
+      - alert: HighTokenUsageRate
+        expr: rate(llm_total_tokens_total[5m]) > 50000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High LLM token usage rate"
+          description: "Token usage rate is {{ $value }} tokens per second for {{ $labels.model }}"

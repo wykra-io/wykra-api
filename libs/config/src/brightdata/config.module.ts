@@ -15,4 +15,3 @@ import brightdataConfiguration from './configuration';
   exports: [BrightdataConfigService],
 })
 export class BrightdataConfigModule {}
-

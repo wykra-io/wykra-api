@@ -5,4 +5,3 @@ export class SearchPostDto {
   @IsString()
   query!: string;
 }
-

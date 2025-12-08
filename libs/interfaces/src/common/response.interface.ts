@@ -10,4 +10,3 @@ export interface UrlResponse {
   url: string;
   isExternal?: boolean;
 }
-

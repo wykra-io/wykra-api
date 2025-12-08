@@ -9,4 +9,3 @@ export default registerAs('openrouter', () => ({
     ? parseInt(env.OPENROUTER_TIMEOUT, 10)
     : 60000,
 }));
-

@@ -27,5 +27,3 @@ export class AddAnalysisToInstagramSearchProfiles1747000000002
     await queryRunner.dropColumn(this._tableName, 'analysis_summary');
   }
 }
-
-

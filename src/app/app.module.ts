@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -11,6 +11,7 @@ import { SentryClientModule } from '@libs/sentry';
 import { AppController } from './app.controller';
 import { BrightdataModule } from '../brightdata';
 import { InstagramModule } from '../instagram';
+import { MetricsModule, MetricsInterceptor } from '../metrics';
 import { PerplexityModule } from '../perplexity';
 import { TasksModule } from '../tasks';
 
@@ -21,6 +22,7 @@ import { TasksModule } from '../tasks';
     DbConfigModule,
     EventEmitterModule.forRoot(),
     InstagramModule,
+    MetricsModule,
     PerplexityModule,
     SentryClientModule,
     SentryModule.forRoot(),
@@ -47,6 +49,10 @@ import { TasksModule } from '../tasks';
     {
       provide: APP_FILTER,
       useClass: SentryGlobalFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MetricsInterceptor,
     },
   ],
 })

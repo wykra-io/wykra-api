@@ -1,0 +1,58 @@
+global:
+  resolve_timeout: 5m
+  # Configure your notification channels here
+  # slack_api_url: 'YOUR_SLACK_WEBHOOK_URL'
+  # smtp_smarthost: 'smtp.gmail.com:587'
+  # smtp_from: 'alerts@wykra.com'
+
+# The root route on which each incoming alert enters.
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default-receiver'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+      continue: true
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
+
+# Inhibition rules allow to mute a set of alerts given that another alert is
+# firing.
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']
+
+# Receivers
+receivers:
+  - name: 'default-receiver'
+    # webhook_configs:
+    #   - url: 'http://webhook:5000/webhook'
+    #     send_resolved: true
+
+  - name: 'critical-receiver'
+    # webhook_configs:
+    #   - url: 'http://webhook:5000/webhook'
+    #     send_resolved: true
+    # slack_configs:
+    #   - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+    #     channel: '#alerts-critical'
+    #     title: 'Critical Alert'
+    #     text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+
+  - name: 'warning-receiver'
+    # webhook_configs:
+    #   - url: 'http://webhook:5000/webhook'
+    #     send_resolved: true
+    # slack_configs:
+    #   - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+    #     channel: '#alerts-warning'
+    #     title: 'Warning Alert'
+    #     text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'

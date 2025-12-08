@@ -11,4 +11,3 @@ import { SentryClientService } from './sentry-client.service';
   exports: [SentryClientService],
 })
 export class SentryClientModule {}
-

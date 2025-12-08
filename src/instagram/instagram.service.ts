@@ -16,6 +16,7 @@ import {
   InstagramSearchProfilesRepository,
   TasksRepository,
 } from '@libs/repositories';
+import { MetricsService } from '../metrics';
 
 import {
   InstagramAnalysisData,
@@ -51,6 +52,7 @@ export class InstagramService {
     private readonly queueService: QueueService,
     private readonly tasksRepo: TasksRepository,
     private readonly searchProfilesRepo: InstagramSearchProfilesRepository,
+    private readonly metricsService: MetricsService,
   ) {
     this.httpClient = axios.create({
       baseURL: this.brightdataConfig.baseUrl,
@@ -148,8 +150,60 @@ Return the result strictly as a JSON object with these fields.
 
 User query: '${query}'`;
 
+      const llmStartTime = Date.now();
       const response = await client.invoke([new HumanMessage(prompt)]);
+      const llmDuration = (Date.now() - llmStartTime) / 1000;
       const responseText = response.content as string;
+
+      // Record token usage metrics (always record the call)
+      const model = 'anthropic/claude-3.5-sonnet';
+      this.metricsService.recordLLMCall(model, 'instagram_search_context');
+      this.metricsService.recordLLMCallDuration(
+        model,
+        'instagram_search_context',
+        llmDuration,
+        'success',
+      );
+
+      // Extract usage from multiple possible locations
+      let promptTokens = 0;
+      let completionTokens = 0;
+      let totalTokens = 0;
+
+      // Check response_metadata.tokenUsage (camelCase - Anthropic format)
+      if (response.response_metadata?.tokenUsage) {
+        const tokenUsage = response.response_metadata.tokenUsage;
+        promptTokens = Number(tokenUsage.promptTokens) || 0;
+        completionTokens = Number(tokenUsage.completionTokens) || 0;
+        totalTokens = Number(tokenUsage.totalTokens) || 0;
+      }
+      // Check usage_metadata (snake_case - LangChain format)
+      else if (response.usage_metadata) {
+        promptTokens = Number(response.usage_metadata.input_tokens) || 0;
+        completionTokens = Number(response.usage_metadata.output_tokens) || 0;
+        totalTokens = Number(response.usage_metadata.total_tokens) || 0;
+      }
+      // Fallback: check response_metadata.usage (snake_case - OpenAI format)
+      else if (response.response_metadata?.usage) {
+        const usage = response.response_metadata.usage;
+        promptTokens = Number(usage.prompt_tokens) || 0;
+        completionTokens = Number(usage.completion_tokens) || 0;
+        totalTokens = Number(usage.total_tokens) || 0;
+      }
+
+      // Record token usage metrics
+      this.metricsService.recordLLMTokenUsage(
+        model,
+        'instagram_search_context',
+        promptTokens,
+        completionTokens,
+        totalTokens,
+      );
+      this.metricsService.recordLLMTokensPerRequest(
+        'search',
+        promptTokens,
+        completionTokens,
+      );
 
       let parsed: Partial<InstagramSearchContext> = {};
 
@@ -184,6 +238,12 @@ User query: '${query}'`;
             : null,
       };
     } catch (error) {
+      this.metricsService.recordLLMError(
+        'anthropic/claude-3.5-sonnet',
+        'instagram_search_context',
+        'api_error',
+      );
+
       this.logger.error(
         'Error extracting Instagram search context with OpenRouter:',
         error,
@@ -207,6 +267,7 @@ User query: '${query}'`;
    * @returns {Promise<InstagramProfile>} The raw profile data from the API.
    */
   private async fetchProfileData(profile: string): Promise<InstagramProfile> {
+    const startTime = Date.now();
     try {
       this.logger.log(`Fetching Instagram profile data for: ${profile}`);
 
@@ -234,6 +295,13 @@ User query: '${query}'`;
         {
           params,
         },
+      );
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.INSTAGRAM,
+        'fetch_profile_data',
+        duration,
       );
 
       this.logger.log(`Successfully fetched data for profile: ${profile}`);
@@ -303,6 +371,7 @@ User query: '${query}'`;
       return [];
     }
 
+    const startTime = Date.now();
     try {
       this.logger.log(
         `Collecting Instagram profiles by URL from BrightData for ${urls.length} urls`,
@@ -329,6 +398,13 @@ User query: '${query}'`;
         {
           params,
         },
+      );
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.INSTAGRAM,
+        'collect_profiles_by_urls',
+        duration,
       );
 
       this.logger.log(
@@ -507,8 +583,60 @@ Where:
 - score 5 = excellent, highly relevant and authentic.`;
 
       try {
+        const llmStartTime = Date.now();
         const response = await client.invoke([new HumanMessage(prompt)]);
+        const llmDuration = (Date.now() - llmStartTime) / 1000;
         const responseText = response.content as string;
+
+        // Record token usage metrics (always record the call)
+        const model = 'anthropic/claude-3.5-sonnet';
+        this.metricsService.recordLLMCall(model, 'instagram_profile_analysis');
+        this.metricsService.recordLLMCallDuration(
+          model,
+          'instagram_profile_analysis',
+          llmDuration,
+          'success',
+        );
+
+        // Extract usage from multiple possible locations
+        let promptTokens = 0;
+        let completionTokens = 0;
+        let totalTokens = 0;
+
+        // Check response_metadata.tokenUsage (camelCase - Anthropic format)
+        if (response.response_metadata?.tokenUsage) {
+          const tokenUsage = response.response_metadata.tokenUsage;
+          promptTokens = Number(tokenUsage.promptTokens) || 0;
+          completionTokens = Number(tokenUsage.completionTokens) || 0;
+          totalTokens = Number(tokenUsage.totalTokens) || 0;
+        }
+        // Check usage_metadata (snake_case - LangChain format)
+        else if (response.usage_metadata) {
+          promptTokens = Number(response.usage_metadata.input_tokens) || 0;
+          completionTokens = Number(response.usage_metadata.output_tokens) || 0;
+          totalTokens = Number(response.usage_metadata.total_tokens) || 0;
+        }
+        // Fallback: check response_metadata.usage (snake_case - OpenAI format)
+        else if (response.response_metadata?.usage) {
+          const usage = response.response_metadata.usage;
+          promptTokens = Number(usage.prompt_tokens) || 0;
+          completionTokens = Number(usage.completion_tokens) || 0;
+          totalTokens = Number(usage.total_tokens) || 0;
+        }
+
+        // Record token usage metrics
+        this.metricsService.recordLLMTokenUsage(
+          model,
+          'instagram_profile_analysis',
+          promptTokens,
+          completionTokens,
+          totalTokens,
+        );
+        this.metricsService.recordLLMTokensPerRequest(
+          'instagram',
+          promptTokens,
+          completionTokens,
+        );
 
         let parsed: {
           summary?: string;
@@ -583,6 +711,12 @@ Where:
           this.sentry.sendException(saveError, { profileUrl, taskId });
         }
       } catch (error) {
+        this.metricsService.recordLLMError(
+          'anthropic/claude-3.5-sonnet',
+          'instagram_profile_analysis',
+          'api_error',
+        );
+
         this.logger.error(
           `Error analyzing Instagram profile with Anthropic: ${profileUrl}`,
           error,
@@ -722,7 +856,68 @@ Quality Score Guidelines:
 
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
+      const llmStartTime = Date.now();
       const response = await this.llmClient.invoke([new HumanMessage(prompt)]);
+      const llmDuration = (Date.now() - llmStartTime) / 1000;
+
+      // Record token usage metrics (always record the call)
+      const model = this.openrouterConfig.model || 'unknown';
+      this.metricsService.recordLLMCall(model, 'instagram_profile_analysis');
+      this.metricsService.recordLLMCallDuration(
+        model,
+        'instagram_profile_analysis',
+        llmDuration,
+        'success',
+      );
+
+      // Extract usage from multiple possible locations
+      let promptTokens = 0;
+      let completionTokens = 0;
+      let totalTokens = 0;
+
+      // Check response_metadata.tokenUsage (camelCase - Anthropic format)
+      if (response.response_metadata?.tokenUsage) {
+        const tokenUsage = response.response_metadata.tokenUsage;
+        promptTokens = Number(tokenUsage.promptTokens) || 0;
+        completionTokens = Number(tokenUsage.completionTokens) || 0;
+        totalTokens = Number(tokenUsage.totalTokens) || 0;
+      }
+      // Check usage_metadata (snake_case - LangChain format)
+      else if (response.usage_metadata) {
+        promptTokens = Number(response.usage_metadata.input_tokens) || 0;
+        completionTokens = Number(response.usage_metadata.output_tokens) || 0;
+        totalTokens = Number(response.usage_metadata.total_tokens) || 0;
+      }
+      // Fallback: check response_metadata.usage (snake_case - OpenAI format)
+      else if (response.response_metadata?.usage) {
+        const usage = response.response_metadata.usage;
+        promptTokens =
+          typeof usage.prompt_tokens === 'number'
+            ? usage.prompt_tokens
+            : Number(usage.prompt_tokens) || 0;
+        completionTokens =
+          typeof usage.completion_tokens === 'number'
+            ? usage.completion_tokens
+            : Number(usage.completion_tokens) || 0;
+        totalTokens =
+          typeof usage.total_tokens === 'number'
+            ? usage.total_tokens
+            : Number(usage.total_tokens) || 0;
+      }
+
+      // Record token usage metrics
+      this.metricsService.recordLLMTokenUsage(
+        model,
+        'instagram_profile_analysis',
+        promptTokens,
+        completionTokens,
+        totalTokens,
+      );
+      this.metricsService.recordLLMTokensPerRequest(
+        'instagram',
+        promptTokens,
+        completionTokens,
+      );
 
       // Parse the LLM response
       const responseText = response.content as string;
@@ -837,6 +1032,9 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
       taskId,
       query,
     });
+
+    // Record task creation metric
+    this.metricsService.recordTaskCreated('instagram_search');
 
     return taskId;
   }
