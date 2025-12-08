@@ -181,17 +181,13 @@ Prometheus scrapes this endpoint every 15 seconds to collect:
 
 **Available Metrics:**
 
-- `http_requests_total` - Total HTTP requests by method, route, and status
-- `http_request_duration_seconds` - Request duration histogram
-- `http_request_errors_total` - Total HTTP errors
-- `tasks_created_total` - Total number of tasks created
-- `tasks_completed_total` - Total number of tasks completed successfully
-- `tasks_failed_total` - Total number of tasks that failed
-- `task_processing_duration_seconds` - Task processing duration histogram
-- `tasks_status_total` - Total number of tasks by status (pending, running, completed, failed)
-- `process_cpu_user_seconds_total` - CPU usage
-- `process_resident_memory_bytes` - Memory usage
-- Plus all default Node.js process metrics
+- **HTTP**: `http_requests_total`, `http_request_duration_seconds`, `http_request_errors_total`
+- **Tasks/Queue**: `tasks_created_total`, `tasks_completed_total`, `tasks_failed_total`, `task_processing_duration_seconds`, `tasks_status_total`, `task_queue_size`, `task_queue_wait_time_seconds`
+- **LLM**: `llm_calls_total`, `llm_prompt_tokens_total`, `llm_completion_tokens_total`, `llm_total_tokens_total`, `llm_input_tokens_per_request`, `llm_output_tokens_per_request`, `llm_call_duration_seconds`, `llm_call_errors_total`
+- **BrightData**: `brightdata_calls_total`, `brightdata_call_duration_seconds`, `brightdata_call_errors_total`
+- **Database**: `db_queries_total`, `db_query_duration_seconds`, `db_query_errors_total`
+- **Redis**: `redis_operations_total`, `redis_operation_duration_seconds`, `redis_operation_errors_total`
+- **System**: `process_cpu_user_seconds_total`, `process_resident_memory_bytes`, plus all default Node.js process metrics
 
 **Task Metrics Queries (Prometheus):**
 
@@ -259,28 +255,30 @@ slack_configs:
 
 **Pre-configured Alerts:**
 
-- **HighErrorRate**: Triggers when error rate > 5% for 5 minutes
-- **HighResponseTime**: Triggers when p95 response time > 2s for 5 minutes
-- **ServiceDown**: Triggers when API is unreachable for 1 minute
-- **HighMemoryUsage**: Triggers when memory > 1GB for 5 minutes
-- **HighCPUUsage**: Triggers when CPU usage > 80% for 5 minutes
+- **HighErrorRate**: Error rate > 5% for 5 minutes
+- **HighResponseTime**: p95 response time > 2s for 5 minutes
+- **ServiceDown**: API unreachable for 1 minute
+- **HighMemoryUsage**: Memory > 1GB for 5 minutes
+- **HighCPUUsage**: CPU usage > 80% for 5 minutes
+- **HighLLMErrorRate**: LLM error spike
+- **HighDatabaseErrorRate / SlowDatabaseQueries**: DB errors or slow queries
+- **HighRedisErrorRate**: Redis errors
+- **LargeTaskQueueBacklog / LongTaskQueueWaitTime**: Queue congestion
+- **HighBrightDataErrorRate**: BrightData failures
+- **SlowLLMCalls / HighTokenUsageRate**: LLM latency or token burn
 
-**Troubleshooting:**
+**Key Monitoring Files:**
 
-- **Metrics not appearing?** Check that:
-  - API is running and accessible
-  - Prometheus can reach `api:3011/metrics` (check Targets in Prometheus UI)
-  - API container is on the same Docker network
-
-- **Grafana shows "No data"?**
-  - Verify Prometheus datasource is configured (should be auto-provisioned)
-  - Check Prometheus is running and has data
-  - Ensure time range in Grafana includes recent data
-
-- **Alerts not firing?**
-  - Check alert rules in Prometheus → Alerts
-  - Verify Alertmanager is running and connected to Prometheus
-  - Check Alertmanager logs: `docker-compose logs alertmanager`
+- `monitoring/grafana/dashboards/wykra-api-dashboard.json` — prebuilt Grafana dashboard
+- `monitoring/prometheus/prometheus.yml` — Prometheus scrape targets
+- `monitoring/prometheus/alerts.yml` — alert rules
+- `monitoring/alertmanager/alertmanager.yml` — alert notifications
+- `src/metrics/metrics.service.ts` — metric definitions
+- `src/metrics/queue-metrics.service.ts` — queue size updater
+- `src/metrics/metrics.interceptor.ts` — HTTP metrics interceptor
+- `src/brightdata/brightdata.service.ts` — BrightData metrics recording
+- `src/instagram/instagram.service.ts` & `src/perplexity/perplexity.service.ts` — LLM token and call metrics
+- `libs/repositories/src/*.repository.ts` — DB metrics wrapping
 
 </details>
 
