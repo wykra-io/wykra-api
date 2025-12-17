@@ -311,6 +311,17 @@ Once the server is running (locally or via Docker), you can hit the analysis end
     }'
   ```
 
+**TikTok search endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/tiktok/search" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "query": "Find up to 15 public TikTok creators from Portugal who post about baking or sourdough bread and have between 5k and 50k followers"
+    }'
+  ```
+
 **Google SERP endpoint:**
 
 - **cURL**:
