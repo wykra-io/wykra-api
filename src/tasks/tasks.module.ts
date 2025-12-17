@@ -1,11 +1,16 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { InstagramSearchProfile, Task } from '@libs/entities';
+import {
+  InstagramSearchProfile,
+  Task,
+  TikTokSearchProfile,
+} from '@libs/entities';
 import { QueueModule } from '@libs/queue';
 import {
   InstagramSearchProfilesRepository,
   TasksRepository,
+  TikTokSearchProfilesRepository,
 } from '@libs/repositories';
 
 import { MetricsModule, MetricsService } from '../metrics';
@@ -15,7 +20,11 @@ import { TasksService } from './tasks.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Task, InstagramSearchProfile]),
+    TypeOrmModule.forFeature([
+      Task,
+      InstagramSearchProfile,
+      TikTokSearchProfile,
+    ]),
     QueueModule,
     MetricsModule,
   ],
@@ -25,6 +34,7 @@ import { TasksService } from './tasks.service';
     TasksProcessor,
     TasksRepository,
     InstagramSearchProfilesRepository,
+    TikTokSearchProfilesRepository,
     {
       provide: 'MetricsService',
       useExisting: MetricsService,

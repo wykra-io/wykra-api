@@ -43,11 +43,12 @@ export class TasksController {
    *   startedAt?: Date;
    *   completedAt?: Date;
    *   instagramProfiles: unknown[];
+   *   tiktokProfiles: unknown[];
    * }>} The task status and related Instagram search profiles.
    */
   @Get(':id')
   public async getTaskStatus(@Param('id') id: string) {
-    const { task, instagramProfiles } =
+    const { task, instagramProfiles, tiktokProfiles } =
       await this.tasksService.getTaskStatus(id);
 
     if (!task) {
@@ -55,6 +56,11 @@ export class TasksController {
     }
 
     const sanitizedProfiles = instagramProfiles.map(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      ({ raw, ...rest }) => rest,
+    );
+
+    const sanitizedTikTokProfiles = tiktokProfiles.map(
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       ({ raw, ...rest }) => rest,
     );
@@ -67,6 +73,7 @@ export class TasksController {
       startedAt: task.startedAt,
       completedAt: task.completedAt,
       instagramProfiles: sanitizedProfiles,
+      tiktokProfiles: sanitizedTikTokProfiles,
     };
   }
 }

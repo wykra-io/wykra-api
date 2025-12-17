@@ -42,6 +42,7 @@ import { QueueService } from './queue.service';
     }),
     BullModule.registerQueue({ name: QueueName.Tasks }),
     BullModule.registerQueue({ name: QueueName.Instagram }),
+    BullModule.registerQueue({ name: QueueName.TikTok }),
   ],
   providers: [QueueService],
   exports: [QueueService],
