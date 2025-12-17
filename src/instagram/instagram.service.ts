@@ -12,6 +12,7 @@ import {
 import { TaskStatus } from '@libs/entities';
 import { QueueService } from '@libs/queue';
 import { SentryClientService } from '@libs/sentry';
+import { safeJsonParseFromText } from '@libs/utils';
 import {
   InstagramSearchProfilesRepository,
   TasksRepository,
@@ -205,35 +206,41 @@ User query: '${query}'`;
         completionTokens,
       );
 
-      let parsed: Partial<InstagramSearchContext> = {};
+      const parsed =
+        safeJsonParseFromText<Partial<InstagramSearchContext>>(
+          responseText,
+          'object',
+        ) ?? null;
 
-      try {
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        const jsonString = jsonMatch ? jsonMatch[0] : responseText;
-        parsed = JSON.parse(jsonString) as Partial<InstagramSearchContext>;
-      } catch (parseError) {
+      if (!parsed) {
         this.logger.warn(
           'Failed to parse Instagram search context JSON, using empty context',
-          parseError,
         );
-        this.sentry.sendException(parseError, {
+        this.sentry.sendException(new Error('Failed to parse JSON'), {
           rawResponse: responseText,
           query,
         });
       }
 
       return {
-        category: typeof parsed.category === 'string' ? parsed.category : null,
+        category:
+          parsed && typeof parsed.category === 'string'
+            ? parsed.category
+            : null,
         results_count:
-          typeof parsed.results_count === 'number'
+          parsed && typeof parsed.results_count === 'number'
             ? parsed.results_count
-            : parsed.results_count &&
+            : parsed &&
+                parsed.results_count &&
                 !Number.isNaN(Number(parsed.results_count))
               ? Number(parsed.results_count)
               : null,
-        location: typeof parsed.location === 'string' ? parsed.location : null,
+        location:
+          parsed && typeof parsed.location === 'string'
+            ? parsed.location
+            : null,
         followers_range:
-          typeof parsed.followers_range === 'string'
+          parsed && typeof parsed.followers_range === 'string'
             ? parsed.followers_range
             : null,
       };

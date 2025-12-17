@@ -1,11 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 
-import { InstagramSearchProfile, Task, TaskStatus } from '@libs/entities';
+import {
+  InstagramSearchProfile,
+  Task,
+  TaskStatus,
+  TikTokSearchProfile,
+} from '@libs/entities';
 import { QueueService } from '@libs/queue';
 import {
   InstagramSearchProfilesRepository,
   TasksRepository,
+  TikTokSearchProfilesRepository,
 } from '@libs/repositories';
 import { MetricsService } from '../metrics';
 
@@ -15,6 +21,7 @@ export class TasksService {
     private readonly queueService: QueueService,
     private readonly tasksRepo: TasksRepository,
     private readonly instagramSearchProfilesRepo: InstagramSearchProfilesRepository,
+    private readonly tiktokSearchProfilesRepo: TikTokSearchProfilesRepository,
     private readonly metricsService: MetricsService,
   ) {}
 
@@ -55,18 +62,20 @@ export class TasksService {
    *
    * @param {string} taskId - The task ID.
    *
-   * @returns {Promise<{ task: Task | null; instagramProfiles: InstagramSearchProfile[] }>}
-   * The task and its related Instagram search profiles.
+   * @returns {Promise<{ task: Task | null; instagramProfiles: InstagramSearchProfile[]; tiktokProfiles: TikTokSearchProfile[] }>}
+   * The task and its related Instagram/TikTok search profiles.
    */
   public async getTaskStatus(taskId: string): Promise<{
     task: Task | null;
     instagramProfiles: InstagramSearchProfile[];
+    tiktokProfiles: TikTokSearchProfile[];
   }> {
-    const [task, instagramProfiles] = await Promise.all([
+    const [task, instagramProfiles, tiktokProfiles] = await Promise.all([
       this.tasksRepo.findOneByTaskId(taskId),
       this.instagramSearchProfilesRepo.findByTaskId(taskId),
+      this.tiktokSearchProfilesRepo.findByTaskId(taskId),
     ]);
 
-    return { task, instagramProfiles };
+    return { task, instagramProfiles, tiktokProfiles };
   }
 }

@@ -1,0 +1,38 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { BrightdataConfigModule, OpenrouterConfigModule } from '@libs/config';
+import { Task, TikTokSearchProfile } from '@libs/entities';
+import { QueueModule } from '@libs/queue';
+import { TasksRepository, TikTokSearchProfilesRepository } from '@libs/repositories';
+
+import { MetricsModule, MetricsService } from '../metrics';
+
+import { TikTokController } from './tiktok.controller';
+import { TikTokProcessor } from './tiktok.processor';
+import { TikTokService } from './tiktok.service';
+
+@Module({
+  imports: [
+    BrightdataConfigModule,
+    OpenrouterConfigModule,
+    QueueModule,
+    TypeOrmModule.forFeature([Task, TikTokSearchProfile]),
+    MetricsModule,
+  ],
+  controllers: [TikTokController],
+  providers: [
+    TikTokService,
+    TikTokProcessor,
+    TasksRepository,
+    TikTokSearchProfilesRepository,
+    {
+      provide: 'MetricsService',
+      useExisting: MetricsService,
+    },
+  ],
+  exports: [TikTokService],
+})
+export class TikTokModule {}
+
+

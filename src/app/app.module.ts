@@ -5,12 +5,17 @@ import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AppConfigModule, DbConfigModule, DbConfigService } from '@libs/config';
-import { InstagramSearchProfile, Task } from '@libs/entities';
+import {
+  InstagramSearchProfile,
+  Task,
+  TikTokSearchProfile,
+} from '@libs/entities';
 import { SentryClientModule } from '@libs/sentry';
 
 import { AppController } from './app.controller';
 import { BrightdataModule } from '../brightdata';
 import { InstagramModule } from '../instagram';
+import { TikTokModule } from '../tiktok';
 import { MetricsModule, MetricsInterceptor } from '../metrics';
 import { PerplexityModule } from '../perplexity';
 import { TasksModule } from '../tasks';
@@ -22,6 +27,7 @@ import { TasksModule } from '../tasks';
     DbConfigModule,
     EventEmitterModule.forRoot(),
     InstagramModule,
+    TikTokModule,
     MetricsModule,
     PerplexityModule,
     SentryClientModule,
@@ -38,7 +44,7 @@ import { TasksModule } from '../tasks';
         database: config.database,
         synchronize: config.synchronize,
         logging: config.logging,
-        entities: [Task, InstagramSearchProfile],
+        entities: [Task, InstagramSearchProfile, TikTokSearchProfile],
         ssl: config.ssl,
       }),
       inject: [DbConfigService],
