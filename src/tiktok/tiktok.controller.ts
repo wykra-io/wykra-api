@@ -1,11 +1,25 @@
 import { Body, Controller, Post } from '@nestjs/common';
 
-import { SearchPostDto } from './dto';
-import { TikTokService } from './tiktok.service';
+import { SearchPostDto, TikTokProfileDTO } from './dto';
+import { TikTokService } from 'src/tiktok/tiktok.service';
 
 @Controller('tiktok')
 export class TikTokController {
   constructor(private readonly tiktokService: TikTokService) {}
+
+  /**
+   * Creates a new TikTok profile analysis task (queued).
+   *
+   * Scraping is done via BrightData trigger -> polling -> snapshot download,
+   * and analysis is done via LLM in the worker, similar to `/tiktok/search`.
+   */
+  @Post('profile')
+  public async profile(
+    @Body() dto: TikTokProfileDTO,
+  ): Promise<{ taskId: string }> {
+    const taskId = await this.tiktokService.profile(dto.profile);
+    return { taskId };
+  }
 
   /**
    * Creates a new TikTok search job.
@@ -23,5 +37,3 @@ export class TikTokController {
     return { taskId };
   }
 }
-
-

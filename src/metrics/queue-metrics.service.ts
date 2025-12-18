@@ -55,9 +55,9 @@ export class QueueMetricsService implements OnModuleInit {
       const tasksTotal = tasksWaiting + tasksActive + tasksDelayed;
       this.metricsService.setTaskQueueSize('tasks', tasksTotal);
 
-      this.logger.debug(
-        `Queue sizes - Instagram: ${instagramTotal} (${instagramWaiting}W/${instagramActive}A/${instagramDelayed}D), Tasks: ${tasksTotal} (${tasksWaiting}W/${tasksActive}A/${tasksDelayed}D)`,
-      );
+      // this.logger.debug(
+      //   `Queue sizes - Instagram: ${instagramTotal} (${instagramWaiting}W/${instagramActive}A/${instagramDelayed}D), Tasks: ${tasksTotal} (${tasksWaiting}W/${tasksActive}A/${tasksDelayed}D)`,
+      // );
     } catch (error) {
       this.logger.error('Error updating queue metrics', error);
       throw error;
