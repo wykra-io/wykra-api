@@ -15,6 +15,11 @@ interface TikTokSearchJobData {
   query: string;
 }
 
+interface TikTokProfileJobData {
+  taskId: string;
+  profile: string;
+}
+
 @Processor(QueueName.TikTok)
 export class TikTokProcessor {
   private readonly logger = new Logger(TikTokProcessor.name);
@@ -160,6 +165,77 @@ export class TikTokProcessor {
       });
 
       this.metricsService.recordTaskFailed(processingDuration, 'tiktok_search');
+    }
+  }
+
+  /**
+   * Processes a TikTok profile analysis job.
+   */
+  @Process('profile')
+  public async profile(job: Job<TikTokProfileJobData>): Promise<void> {
+    const { taskId, profile } = job.data;
+    const startTime = Date.now();
+
+    // Track queue wait time
+    const queuedAt = job.timestamp;
+    const waitTime = (startTime - queuedAt) / 1000;
+    this.metricsService.recordTaskQueueWaitTime(
+      'tiktok_profile',
+      'tiktok',
+      waitTime,
+    );
+
+    try {
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Running,
+        startedAt: new Date(),
+      });
+
+      this.logger.log(
+        `TikTok profile task ${taskId} started for profile: ${profile}`,
+      );
+      this.metricsService.recordTaskStatusChange('running', 'tiktok_profile');
+
+      // This internally uses BrightData trigger -> poll -> snapshot download (runDatasetAndDownload)
+      const data = await this.tiktokService.analyzeProfile(profile);
+
+      const result = JSON.stringify(data);
+      const processingDuration = (Date.now() - startTime) / 1000;
+
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Completed,
+        result,
+        completedAt: new Date(),
+      });
+
+      this.metricsService.recordTaskCompleted(
+        processingDuration,
+        'tiktok_profile',
+      );
+      this.logger.log(`TikTok profile task ${taskId} completed successfully`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      const processingDuration = (Date.now() - startTime) / 1000;
+
+      this.logger.error(
+        `TikTok profile task ${taskId} failed: ${errorMessage}`,
+        errorStack,
+      );
+
+      this.sentry.sendException(error, { taskId, profile });
+
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Failed,
+        error: errorMessage,
+        completedAt: new Date(),
+      });
+
+      this.metricsService.recordTaskFailed(
+        processingDuration,
+        'tiktok_profile',
+      );
     }
   }
 }
