@@ -1,5 +1,6 @@
 export enum BrightdataDataset {
   INSTAGRAM = 'gd_l1vikfch901nx3by4',
+  INSTAGRAM_POST_COMMENTS = 'gd_ltppn085pokosxh13',
   TIKTOK = 'gd_l1villgoiiidt09ci',
   TIKTOK_VIDEO_COMMENTS = 'gd_lkf2st302ap89utw5k',
   GOOGLE_SERP = 'gd_mfz5x93lmsjjjylob',

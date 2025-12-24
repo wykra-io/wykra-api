@@ -1,6 +1,10 @@
 import { Controller, Get, Post, Query, Body } from '@nestjs/common';
 
-import { InstagramAnalysisDTO, SearchPostDto } from './dto';
+import {
+  InstagramAnalysisDTO,
+  InstagramProfileDTO,
+  SearchPostDto,
+} from './dto';
 import { InstagramAnalysisData } from './interfaces';
 import { InstagramService } from './instagram.service';
 
@@ -35,6 +39,23 @@ export class InstagramController {
       throw new Error('Query must be a non-empty string');
     }
     const taskId = await this.instagramService.search(dto.query);
+    return { taskId };
+  }
+
+  /**
+   * Creates a new Instagram suspicious comments analysis job (queued).
+   *
+   * Scrapes comments from the profile's recent posts and analyzes them for suspicious activity.
+   */
+  @Post('profile/comments/suspicious')
+  public async commentsSuspicious(
+    @Body() dto: InstagramProfileDTO,
+  ): Promise<{ taskId: string }> {
+    const profile = String(dto.profile ?? '').trim();
+    if (!profile) {
+      throw new Error('Profile must be a non-empty string');
+    }
+    const taskId = await this.instagramService.commentsSuspicious(profile);
     return { taskId };
   }
 }
