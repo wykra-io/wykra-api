@@ -20,6 +20,11 @@ interface TikTokProfileJobData {
   profile: string;
 }
 
+interface TikTokCommentsSuspiciousJobData {
+  taskId: string;
+  profile: string;
+}
+
 @Processor(QueueName.TikTok)
 export class TikTokProcessor {
   private readonly logger = new Logger(TikTokProcessor.name);
@@ -69,13 +74,14 @@ export class TikTokProcessor {
         .filter((v): v is string => typeof v === 'string' && v.length > 0)
         .join(' ');
 
-      const searchTerms =
-        (Array.isArray(context.search_terms) &&
-          context.search_terms.length > 0 &&
-          context.search_terms) ||
-        (baseTerm ? [baseTerm] : []);
+      const searchTerms: string[] =
+        context.search_terms && context.search_terms.length > 0
+          ? context.search_terms
+          : baseTerm
+            ? [baseTerm]
+            : [];
 
-      const country =
+      const country: string =
         typeof context.country_code === 'string' &&
         context.country_code.length === 2
           ? context.country_code
@@ -235,6 +241,80 @@ export class TikTokProcessor {
       this.metricsService.recordTaskFailed(
         processingDuration,
         'tiktok_profile',
+      );
+    }
+  }
+
+  /**
+   * Processes a TikTok suspicious-comments analysis job.
+   */
+  @Process('comments_suspicious')
+  public async suspiciousComments(
+    job: Job<TikTokCommentsSuspiciousJobData>,
+  ): Promise<void> {
+    const { taskId, profile } = job.data;
+    const startTime = Date.now();
+
+    const queuedAt = job.timestamp;
+    const waitTime = (startTime - queuedAt) / 1000;
+    this.metricsService.recordTaskQueueWaitTime(
+      'tiktok_comments_suspicious',
+      'tiktok',
+      waitTime,
+    );
+
+    try {
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Running,
+        startedAt: new Date(),
+      });
+
+      this.logger.log(
+        `TikTok comments suspicious task ${taskId} started for profile: ${profile}`,
+      );
+      this.metricsService.recordTaskStatusChange(
+        'running',
+        'tiktok_comments_suspicious',
+      );
+
+      const data = await this.tiktokService.analyzeSuspiciousComments(profile);
+      const result = JSON.stringify(data);
+      const processingDuration = (Date.now() - startTime) / 1000;
+
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Completed,
+        result,
+        completedAt: new Date(),
+      });
+
+      this.metricsService.recordTaskCompleted(
+        processingDuration,
+        'tiktok_comments_suspicious',
+      );
+      this.logger.log(
+        `TikTok comments suspicious task ${taskId} completed successfully`,
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      const processingDuration = (Date.now() - startTime) / 1000;
+
+      this.logger.error(
+        `TikTok comments suspicious task ${taskId} failed: ${errorMessage}`,
+        errorStack,
+      );
+      this.sentry.sendException(error, { taskId, profile });
+
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Failed,
+        error: errorMessage,
+        completedAt: new Date(),
+      });
+
+      this.metricsService.recordTaskFailed(
+        processingDuration,
+        'tiktok_comments_suspicious',
       );
     }
   }

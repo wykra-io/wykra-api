@@ -1,7 +1,7 @@
 import { Body, Controller, Post } from '@nestjs/common';
 
 import { SearchPostDto, TikTokProfileDTO } from './dto';
-import { TikTokService } from 'src/tiktok/tiktok.service';
+import { TikTokService } from './tiktok.service';
 
 @Controller('tiktok')
 export class TikTokController {
@@ -34,6 +34,23 @@ export class TikTokController {
       throw new Error('Query must be a non-empty string');
     }
     const taskId = await this.tiktokService.search(dto.query);
+    return { taskId };
+  }
+
+  /**
+   * Creates a new TikTok suspicious comments analysis job (queued).
+   *
+   * Scrapes comments from the profile's videos and analyzes them for suspicious activity.
+   *
+   * @param {TikTokProfileDTO} dto - Profile data containing the TikTok profile.
+   *
+   * @returns {Promise<{ taskId: string }>} The created task ID.
+   */
+  @Post('profile/comments/suspicious')
+  public async commentsSuspicious(
+    @Body() dto: TikTokProfileDTO,
+  ): Promise<{ taskId: string }> {
+    const taskId = await this.tiktokService.commentsSuspicious(dto.profile);
     return { taskId };
   }
 }

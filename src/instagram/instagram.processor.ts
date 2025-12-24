@@ -19,6 +19,11 @@ interface InstagramSearchJobData {
   query: string;
 }
 
+interface InstagramCommentsSuspiciousJobData {
+  taskId: string;
+  profile: string;
+}
+
 @Processor(QueueName.Instagram)
 export class InstagramProcessor {
   private readonly logger = new Logger(InstagramProcessor.name);
@@ -328,6 +333,81 @@ Return only the list of URLs with no extra text.`;
       this.metricsService.recordTaskFailed(
         processingDuration,
         'instagram_search',
+      );
+    }
+  }
+
+  /**
+   * Processes an Instagram suspicious-comments analysis job.
+   */
+  @Process('comments_suspicious')
+  public async suspiciousComments(
+    job: Job<InstagramCommentsSuspiciousJobData>,
+  ): Promise<void> {
+    const { taskId, profile } = job.data;
+    const startTime = Date.now();
+
+    const queuedAt = job.timestamp;
+    const waitTime = (startTime - queuedAt) / 1000;
+    this.metricsService.recordTaskQueueWaitTime(
+      'instagram_comments_suspicious',
+      'instagram',
+      waitTime,
+    );
+
+    try {
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Running,
+        startedAt: new Date(),
+      });
+
+      this.logger.log(
+        `Instagram comments suspicious task ${taskId} started for profile: ${profile}`,
+      );
+      this.metricsService.recordTaskStatusChange(
+        'running',
+        'instagram_comments_suspicious',
+      );
+
+      const data =
+        await this.instagramService.analyzeSuspiciousComments(profile);
+      const result = JSON.stringify(data);
+      const processingDuration = (Date.now() - startTime) / 1000;
+
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Completed,
+        result,
+        completedAt: new Date(),
+      });
+
+      this.metricsService.recordTaskCompleted(
+        processingDuration,
+        'instagram_comments_suspicious',
+      );
+      this.logger.log(
+        `Instagram comments suspicious task ${taskId} completed successfully`,
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      const processingDuration = (Date.now() - startTime) / 1000;
+
+      this.logger.error(
+        `Instagram comments suspicious task ${taskId} failed: ${errorMessage}`,
+        errorStack,
+      );
+      this.sentry.sendException(error, { taskId, profile });
+
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Failed,
+        error: errorMessage,
+        completedAt: new Date(),
+      });
+
+      this.metricsService.recordTaskFailed(
+        processingDuration,
+        'instagram_comments_suspicious',
       );
     }
   }

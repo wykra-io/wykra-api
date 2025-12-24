@@ -109,6 +109,339 @@ export class InstagramService {
   }
 
   /**
+   * Creates a new Instagram suspicious comments analysis job and queues it for processing.
+   */
+  public async commentsSuspicious(profile: string): Promise<string> {
+    const taskId = randomUUID();
+
+    await this.tasksRepo.create({
+      taskId,
+      status: TaskStatus.Pending,
+      result: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    });
+
+    await this.queueService.instagram.add('comments_suspicious', {
+      taskId,
+      profile,
+    });
+
+    this.metricsService.recordTaskCreated('instagram_comments_suspicious');
+
+    return taskId;
+  }
+
+  /**
+   * Analyzes suspicious comments for an Instagram profile by scraping comments from recent posts.
+   *
+   * Flow mirrors TikTok:
+   * - fetch profile to get post URLs
+   * - scrape comments (BrightData dataset id provided via config)
+   * - run LLM suspicious-activity analysis
+   */
+  public async analyzeSuspiciousComments(profile: string): Promise<unknown> {
+    try {
+      this.logger.log(
+        `Starting suspicious comments analysis for Instagram profile: ${profile}`,
+      );
+
+      const profileData = await this.fetchProfileData(profile);
+      const p = profileData as unknown as Record<string, unknown>;
+
+      // Extract post URLs from the profile (use the canonical interface field first, but be defensive)
+      const rawPosts =
+        (Array.isArray((p as { posts?: unknown[] }).posts) &&
+          (p as { posts?: unknown[] }).posts) ||
+        (Array.isArray((p as { items?: unknown[] }).items) &&
+          (p as { items?: unknown[] }).items) ||
+        [];
+
+      const postUrls: string[] = [];
+      const seenUrls = new Set<string>();
+
+      for (const post of rawPosts.slice(0, 3)) {
+        const postObj = (post || {}) as Record<string, unknown>;
+        const postUrl =
+          (typeof postObj.url === 'string' && postObj.url) ||
+          (typeof postObj.post_url === 'string' && postObj.post_url) ||
+          (typeof postObj.permalink === 'string' && postObj.permalink) ||
+          null;
+
+        if (
+          postUrl &&
+          postUrl.includes('instagram.com') &&
+          !seenUrls.has(postUrl)
+        ) {
+          postUrls.push(postUrl);
+          seenUrls.add(postUrl);
+        }
+      }
+
+      if (postUrls.length === 0) {
+        this.logger.warn(
+          `No post URLs found for profile ${profile} to scrape comments`,
+        );
+        return {
+          profile,
+          postsAnalyzed: 0,
+          message: 'No posts found to analyze comments',
+        };
+      }
+
+      const startTime = Date.now();
+      const endpoint = `/datasets/v3/scrape`;
+      const requestBody = postUrls.map((url) => ({ url }));
+      const params = {
+        dataset_id: BrightdataDataset.INSTAGRAM_POST_COMMENTS,
+        notify: 'false',
+        include_errors: 'true',
+        limit_per_input: '50',
+      };
+
+      const response = await this.httpClient.post<unknown>(
+        endpoint,
+        requestBody,
+        {
+          params,
+        },
+      );
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        BrightdataDataset.INSTAGRAM_POST_COMMENTS,
+        'scrape_post_comments',
+        duration,
+      );
+
+      const data = response.data;
+      const allComments: unknown[] = Array.isArray(data)
+        ? (data as unknown[])
+        : data && typeof data === 'object'
+          ? [data]
+          : typeof data === 'string'
+            ? data
+                .split('\n')
+                .map((line) => line.trim())
+                .filter((line) => line.length > 0)
+                .map((line) => {
+                  try {
+                    return JSON.parse(line) as unknown;
+                  } catch {
+                    return null;
+                  }
+                })
+                .filter((x): x is unknown => x !== null)
+            : [];
+
+      let suspiciousAnalysis: unknown = null;
+      if (allComments.length > 0) {
+        try {
+          this.logger.log(
+            `Analyzing ${allComments.length} comments for suspicious activity with LLM`,
+          );
+          suspiciousAnalysis = await this.analyzeCommentsForSuspiciousActivity(
+            allComments,
+            profile,
+          );
+        } catch (error) {
+          this.logger.error(
+            'Error analyzing comments with LLM, returning raw comments:',
+            error,
+          );
+          this.sentry.sendException(error, {
+            profile,
+            commentCount: allComments.length,
+          });
+        }
+      }
+
+      return {
+        profile,
+        postsAnalyzed: postUrls.length,
+        totalComments: allComments.length,
+        postUrls,
+        analysis: suspiciousAnalysis,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error analyzing suspicious comments for Instagram profile ${profile}:`,
+        error,
+      );
+      this.sentry.sendException(error, { profile });
+      throw error;
+    }
+  }
+
+  private async analyzeCommentsForSuspiciousActivity(
+    comments: unknown[],
+    profile: string,
+  ): Promise<unknown> {
+    try {
+      const commentData = comments.slice(0, 150).map((comment, idx) => {
+        const c = (comment || {}) as Record<string, unknown>;
+        return {
+          index: idx + 1,
+          comment_text:
+            (typeof c.comment === 'string' && c.comment) ||
+            (typeof c.comment_text === 'string' && c.comment_text) ||
+            (typeof c.text === 'string' && c.text) ||
+            '',
+          commenter_user_name:
+            (typeof c.comment_user === 'string' && c.comment_user) ||
+            (typeof c.commenter_user_name === 'string' &&
+              c.commenter_user_name) ||
+            (typeof c.username === 'string' && c.username) ||
+            (typeof c.user_name === 'string' && c.user_name) ||
+            'unknown',
+          num_likes:
+            (typeof c.likes_number === 'number' && c.likes_number) ||
+            (typeof c.likes_number === 'string' &&
+            !Number.isNaN(Number(c.likes_number))
+              ? Number(c.likes_number)
+              : 0) ||
+            (typeof c.num_likes === 'number' && c.num_likes) ||
+            (typeof c.num_likes === 'string' &&
+            !Number.isNaN(Number(c.num_likes))
+              ? Number(c.num_likes)
+              : 0),
+          num_replies:
+            (typeof c.replies_number === 'number' && c.replies_number) ||
+            (typeof c.replies_number === 'string' &&
+            !Number.isNaN(Number(c.replies_number))
+              ? Number(c.replies_number)
+              : 0) ||
+            (typeof c.num_replies === 'number' && c.num_replies) ||
+            (typeof c.num_replies === 'string' &&
+            !Number.isNaN(Number(c.num_replies))
+              ? Number(c.num_replies)
+              : 0),
+          comment_id:
+            (typeof c.comment_id === 'string' && c.comment_id) ||
+            (typeof c.id === 'string' && c.id) ||
+            null,
+          date_created:
+            (typeof c.comment_date === 'string' && c.comment_date) ||
+            (typeof c.date_created === 'string' && c.date_created) ||
+            (typeof c.created_at === 'string' && c.created_at) ||
+            null,
+        };
+      });
+
+      const prompt = `Analyze these Instagram post comments for suspicious activity and patterns.
+
+Profile: ${profile}
+Total Comments Analyzed: ${comments.length}
+Comments Sample (showing up to 150):
+
+${commentData
+  .map(
+    (c) => `
+Comment ${c.index}:
+- Commenter: ${c.commenter_user_name}
+- Text: ${c.comment_text}
+- Likes: ${c.num_likes}
+- Replies: ${c.num_replies}
+- Date: ${c.date_created || 'unknown'}
+- Comment ID: ${c.comment_id || 'unknown'}`,
+  )
+  .join('\n')}
+
+Please analyze these comments and identify suspicious activity patterns such as:
+
+1. **Spam Comments**: Generic, repetitive, or promotional comments
+2. **Bot Activity**: Comments that appear automated or fake
+3. **Engagement Manipulation**: Unusual patterns in likes/replies that suggest manipulation
+4. **Suspicious Commenters**: Accounts with suspicious patterns (e.g., all comments are generic, no engagement, etc.)
+5. **Fake Engagement**: Comments that seem designed to inflate engagement metrics
+6. **Pattern Analysis**: Any recurring suspicious patterns across multiple comments
+
+Return your analysis as a JSON object with the following structure:
+{
+  "summary": "A comprehensive summary of suspicious activity findings (2-3 paragraphs)",
+  "suspiciousCount": <number of comments identified as suspicious>,
+  "suspiciousPercentage": <percentage of total comments that are suspicious>,
+  "riskLevel": "<low/medium/high>",
+  "patterns": [
+    {
+      "type": "<spam/bot/fake_engagement/etc>",
+      "description": "<description of the pattern>",
+      "examples": [<array of comment indices or IDs that match this pattern>],
+      "severity": "<low/medium/high>"
+    }
+  ],
+  "suspiciousComments": [
+    {
+      "commentIndex": <number>,
+      "commentId": "<comment_id>",
+      "reason": "<why this comment is suspicious>",
+      "riskScore": <1-10>
+    }
+  ],
+  "recommendations": "<recommendations based on findings>"
+}
+
+Risk Level Guidelines:
+- low: Minimal suspicious activity, likely authentic engagement
+- medium: Some suspicious patterns detected, mixed authenticity
+- high: Significant suspicious activity, likely fake/bot engagement
+
+Return ONLY the JSON object, no additional text or markdown formatting.`;
+
+      const llmStartTime = Date.now();
+      const response = await this.llmClient.invoke([new HumanMessage(prompt)]);
+      const llmDuration = (Date.now() - llmStartTime) / 1000;
+
+      const model = this.openrouterConfig.model || 'unknown';
+      this.metricsService.recordLLMCall(model, 'instagram_comments_suspicious');
+      this.metricsService.recordLLMCallDuration(
+        model,
+        'instagram_comments_suspicious',
+        llmDuration,
+        'success',
+      );
+
+      const responseText = response.content as string;
+      return (
+        safeJsonParseFromText<unknown>(responseText, 'object') ?? {
+          summary:
+            'LLM analysis completed but response parsing failed. Comments were collected successfully.',
+          suspiciousCount: 0,
+          suspiciousPercentage: 0,
+          riskLevel: 'unknown',
+          patterns: [],
+          suspiciousComments: [],
+          recommendations:
+            'Unable to analyze comments due to parsing error. Review comments manually.',
+          error: 'LLM response parsing failed',
+        }
+      );
+    } catch (error) {
+      const model = this.openrouterConfig.model || 'unknown';
+      this.metricsService.recordLLMError(
+        model,
+        'instagram_comments_suspicious',
+        'api_error',
+      );
+      this.logger.error('Error analyzing comments with LLM:', error);
+      this.sentry.sendException(error);
+      return {
+        summary:
+          'LLM analysis failed. Comments were collected but could not be analyzed for suspicious activity.',
+        suspiciousCount: 0,
+        suspiciousPercentage: 0,
+        riskLevel: 'unknown',
+        patterns: [],
+        suspiciousComments: [],
+        recommendations:
+          'LLM analysis failed. Review comments manually to identify suspicious activity.',
+        error: 'LLM analysis failed',
+      };
+    }
+  }
+
+  /**
    * Extracts structured context from a free-form user query about finding influencers.
    *
    * Uses OpenRouter with the `anthropic/claude-3.5-sonnet` model via LangChain.

@@ -10,6 +10,8 @@ import { MetricsModule, MetricsService } from '../metrics';
 
 import { TikTokController } from './tiktok.controller';
 import { TikTokProcessor } from './tiktok.processor';
+import { TikTokBrightdataService } from './brightdata/tiktok-brightdata.service';
+import { TikTokLLMService } from './llm/tiktok-llm.service';
 import { TikTokService } from './tiktok.service';
 
 @Module({
@@ -22,6 +24,8 @@ import { TikTokService } from './tiktok.service';
   ],
   controllers: [TikTokController],
   providers: [
+    TikTokBrightdataService,
+    TikTokLLMService,
     TikTokService,
     TikTokProcessor,
     TasksRepository,
