@@ -161,7 +161,7 @@ export class InstagramService {
       const postUrls: string[] = [];
       const seenUrls = new Set<string>();
 
-      for (const post of rawPosts.slice(0, 3)) {
+      for (const post of rawPosts.slice(0, 5)) {
         const postObj = (post || {}) as Record<string, unknown>;
         const postUrl =
           (typeof postObj.url === 'string' && postObj.url) ||

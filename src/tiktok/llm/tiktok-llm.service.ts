@@ -20,6 +20,16 @@ export class TikTokLLMService {
   private readonly defaultClient: ChatOpenAI;
   private readonly sonnetClient: ChatOpenAI;
 
+  /**
+   * Checks if a string contains emojis
+   */
+  private containsEmoji(text: string): boolean {
+    // Unicode ranges for emojis
+    const emojiRegex =
+      /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{200D}]|[\u{203C}]|[\u{2049}]|[\u{2122}]|[\u{2139}]|[\u{2194}-\u{2199}]|[\u{21A9}-\u{21AA}]|[\u{231A}-\u{231B}]|[\u{2328}]|[\u{2388}]|[\u{23CF}]|[\u{23E9}-\u{23F3}]|[\u{23F8}-\u{23FA}]|[\u{24C2}]|[\u{25AA}-\u{25AB}]|[\u{25B6}]|[\u{25C0}]|[\u{25FB}-\u{25FE}]|[\u{2600}-\u{2604}]|[\u{260E}]|[\u{2611}]|[\u{2614}-\u{2615}]|[\u{2618}]|[\u{261D}]|[\u{2620}]|[\u{2622}-\u{2623}]|[\u{2626}]|[\u{262A}]|[\u{262E}-\u{262F}]|[\u{2638}-\u{263A}]|[\u{2640}]|[\u{2642}]|[\u{2648}-\u{2653}]|[\u{2660}]|[\u{2663}]|[\u{2665}-\u{2666}]|[\u{2668}]|[\u{267B}]|[\u{267E}-\u{267F}]|[\u{2692}-\u{2697}]|[\u{2699}]|[\u{269B}-\u{269C}]|[\u{26A0}-\u{26A1}]|[\u{26AA}-\u{26AB}]|[\u{26B0}-\u{26B1}]|[\u{26BD}-\u{26BE}]|[\u{26C4}-\u{26C5}]|[\u{26C8}]|[\u{26CE}-\u{26CF}]|[\u{26D1}]|[\u{26D3}-\u{26D4}]|[\u{26E9}-\u{26EA}]|[\u{26F0}-\u{26F5}]|[\u{26F7}-\u{26FA}]|[\u{26FD}]|[\u{2702}]|[\u{2705}]|[\u{2708}-\u{270D}]|[\u{270F}]|[\u{2712}]|[\u{2714}]|[\u{2716}]|[\u{271D}]|[\u{2721}]|[\u{2728}]|[\u{2733}-\u{2734}]|[\u{2744}]|[\u{2747}]|[\u{274C}]|[\u{274E}]|[\u{2753}-\u{2755}]|[\u{2757}]|[\u{2763}-\u{2764}]|[\u{2795}-\u{2797}]|[\u{27A1}]|[\u{27B0}]|[\u{27BF}]|[\u{2934}-\u{2935}]|[\u{2B05}-\u{2B07}]|[\u{2B1B}-\u{2B1C}]|[\u{2B50}]|[\u{2B55}]|[\u{3030}]|[\u{303D}]|[\u{3297}]|[\u{3299}]/u;
+    return emojiRegex.test(text);
+  }
+
   constructor(
     private readonly openrouterConfig: OpenrouterConfigService,
     private readonly sentry: SentryClientService,
@@ -256,7 +266,10 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
         };
       }
 
-      if (parsed.qualityScore && (parsed.qualityScore < 1 || parsed.qualityScore > 5)) {
+      if (
+        parsed.qualityScore &&
+        (parsed.qualityScore < 1 || parsed.qualityScore > 5)
+      ) {
         parsed.qualityScore = 3;
       }
       if (!parsed.summary) {
@@ -539,14 +552,16 @@ Comment ${c.index}:
   )
   .join('\n')}
 
+**IMPORTANT**: Do NOT mark comments containing emojis as suspicious. Comments with emojis are considered normal, authentic engagement and should be excluded from suspicious activity analysis.
+
 Please analyze these comments and identify suspicious activity patterns such as:
 
-1. **Spam Comments**: Generic, repetitive, or promotional comments
-2. **Bot Activity**: Comments that appear automated or fake
-3. **Engagement Manipulation**: Unusual patterns in likes/replies that suggest manipulation
-4. **Suspicious Commenters**: Accounts with suspicious patterns (e.g., all comments are generic, no engagement, etc.)
-5. **Fake Engagement**: Comments that seem designed to inflate engagement metrics
-6. **Pattern Analysis**: Any recurring suspicious patterns across multiple comments
+1. **Spam Comments**: Generic, repetitive, or promotional comments (excluding those with emojis)
+2. **Bot Activity**: Comments that appear automated or fake (excluding those with emojis)
+3. **Engagement Manipulation**: Unusual patterns in likes/replies that suggest manipulation (excluding comments with emojis)
+4. **Suspicious Commenters**: Accounts with suspicious patterns (e.g., all comments are generic, no engagement, etc.) - but exclude commenters whose comments contain emojis
+5. **Fake Engagement**: Comments that seem designed to inflate engagement metrics (excluding those with emojis)
+6. **Pattern Analysis**: Any recurring suspicious patterns across multiple comments (excluding comments with emojis)
 
 Return your analysis as a JSON object with the following structure:
 {
@@ -598,8 +613,24 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const responseText = response.content as string;
 
-      return (
-        safeJsonParseFromText<unknown>(responseText, 'object') ?? {
+      const analysisResult = safeJsonParseFromText<{
+        summary?: string;
+        suspiciousCount?: number;
+        suspiciousPercentage?: number;
+        riskLevel?: string;
+        patterns?: unknown[];
+        suspiciousComments?: Array<{
+          commentIndex?: number;
+          commentId?: string;
+          reason?: string;
+          riskScore?: number;
+        }>;
+        recommendations?: string;
+        error?: string;
+      }>(responseText, 'object');
+
+      if (!analysisResult) {
+        return {
           summary:
             'LLM analysis completed but response parsing failed. Comments were collected successfully.',
           suspiciousCount: 0,
@@ -610,8 +641,42 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
           recommendations:
             'Unable to analyze comments due to parsing error. Review comments manually.',
           error: 'LLM response parsing failed',
+        };
+      }
+
+      // Filter out comments with emojis from suspicious comments list
+      if (
+        analysisResult.suspiciousComments &&
+        Array.isArray(analysisResult.suspiciousComments)
+      ) {
+        const originalCount = analysisResult.suspiciousComments.length;
+        analysisResult.suspiciousComments =
+          analysisResult.suspiciousComments.filter((suspiciousComment) => {
+            // Find the original comment text
+            const originalComment = commentData.find(
+              (c) => c.index === suspiciousComment.commentIndex,
+            );
+            if (
+              originalComment &&
+              this.containsEmoji(originalComment.comment_text)
+            ) {
+              return false; // Exclude comments with emojis
+            }
+            return true;
+          });
+
+        // Update counts after filtering
+        const filteredCount = analysisResult.suspiciousComments.length;
+        if (originalCount !== filteredCount) {
+          analysisResult.suspiciousCount = filteredCount;
+          if (comments.length > 0) {
+            analysisResult.suspiciousPercentage =
+              Math.round((filteredCount / comments.length) * 100 * 100) / 100;
+          }
         }
-      );
+      }
+
+      return analysisResult;
     } catch (error) {
       const model = this.openrouterConfig.model || 'unknown';
       this.metricsService.recordLLMError(
@@ -636,5 +701,4 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
     }
   }
 }
-
 
