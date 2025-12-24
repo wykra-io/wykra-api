@@ -322,6 +322,50 @@ Once the server is running (locally or via Docker), you can hit the analysis end
     }'
   ```
 
+**TikTok profile analysis endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/tiktok/profile" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "profile": "username"
+    }'
+  ```
+  Returns a `taskId`. Use the task status endpoint (see below) to check progress and retrieve results.
+
+**TikTok comments analysis endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/tiktok/profile/comments/suspicious" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "profile": "username"
+    }'
+  ```
+  Analyzes comments from the profile's recent videos (up to 5 videos) for suspicious activity. Comments containing emojis are excluded from suspicious analysis. Returns a `taskId`. Use the task status endpoint (see below) to check progress and retrieve results.
+
+**Instagram comments analysis endpoint:**
+
+- **cURL**:
+  ```bash
+  curl -X POST "http://localhost:3011/api/v1/instagram/profile/comments/suspicious" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "profile": "username"
+    }'
+  ```
+  Analyzes comments from the profile's recent posts (up to 5 posts) for suspicious activity. Returns a `taskId`. Use the task status endpoint (see below) to check progress and retrieve results.
+
+**Task status endpoint:**
+
+- **cURL**:
+  ```bash
+  curl "http://localhost:3011/api/v1/tasks/<taskId>"
+  ```
+  Replace `<taskId>` with the task ID returned from any of the above endpoints. Returns task status (`pending`, `running`, `completed`, `failed`), result data, and any errors.
+
 **Google SERP endpoint:**
 
 - **cURL**:

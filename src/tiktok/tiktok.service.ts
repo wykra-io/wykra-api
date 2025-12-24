@@ -291,7 +291,7 @@ export class TikTokService {
       const videoUrls: string[] = [];
       const seenUrls = new Set<string>();
 
-      for (const video of rawVideos.slice(0, 3)) {
+      for (const video of rawVideos.slice(0, 5)) {
         const v = (video || {}) as Record<string, unknown>;
         const videoUrl =
           (typeof v.video_url === 'string' && v.video_url) ||
