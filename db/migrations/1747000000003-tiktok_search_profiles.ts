@@ -85,5 +85,3 @@ export class TikTokSearchProfiles1747000000003 implements MigrationInterface {
     await queryRunner.dropTable(this._tableName);
   }
 }
-
-

@@ -13,6 +13,5 @@ export interface TikTokAnalysisResult {
   engagementStrength?: string;
   postsAnalysis?: string;
   hashtagsStatistics?: string;
-  message?: string;
+  message?: string; // Error or warning message if profile is private or data unsuitable
 }
-
