@@ -39,9 +39,10 @@ export class PerplexityService {
     private readonly metricsService: MetricsService,
   ) {
     // Base configuration for creating ChatOpenAI instances
-    if (this.openrouterConfig.isConfigured) {
+    const apiKey = this.openrouterConfig.apiKey;
+    if (apiKey) {
       this.baseConfig = {
-        openAIApiKey: this.openrouterConfig.apiKey!,
+        openAIApiKey: apiKey,
         configuration: {
           baseURL: this.openrouterConfig.baseUrl,
           defaultHeaders: {
