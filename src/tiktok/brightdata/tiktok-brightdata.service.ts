@@ -9,21 +9,37 @@ import { MetricsService } from '../../metrics';
 @Injectable()
 export class TikTokBrightdataService {
   private readonly logger = new Logger(TikTokBrightdataService.name);
-  private readonly httpClient: AxiosInstance;
+  private readonly httpClient: AxiosInstance | null;
 
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
     private readonly sentry: SentryClientService,
     private readonly metricsService: MetricsService,
   ) {
-    this.httpClient = axios.create({
-      baseURL: this.brightdataConfig.baseUrl,
-      timeout: this.brightdataConfig.timeout,
-      headers: {
-        Authorization: `Bearer ${this.brightdataConfig.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    if (this.brightdataConfig.isConfigured) {
+      this.httpClient = axios.create({
+        baseURL: this.brightdataConfig.baseUrl,
+        timeout: this.brightdataConfig.timeout,
+        headers: {
+          Authorization: `Bearer ${this.brightdataConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+    } else {
+      this.httpClient = null;
+      this.logger.warn(
+        'BrightData API key not configured. TikTok BrightData features will be unavailable.',
+      );
+    }
+  }
+
+  private ensureHttpClient(): AxiosInstance {
+    if (!this.httpClient) {
+      throw new Error(
+        'BrightData API key is not configured. Please set BRIGHTDATA_API_KEY environment variable.',
+      );
+    }
+    return this.httpClient;
   }
 
   private async sleep(ms: number): Promise<void> {
@@ -35,7 +51,7 @@ export class TikTokBrightdataService {
     triggerBody: unknown[],
     params: Record<string, string>,
   ): Promise<{ snapshot_id: string }> {
-    const response = await this.httpClient.post<{ snapshot_id: string }>(
+    const response = await this.ensureHttpClient().post<{ snapshot_id: string }>(
       '/datasets/v3/trigger',
       triggerBody,
       {
@@ -62,7 +78,7 @@ export class TikTokBrightdataService {
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeoutMs) {
-      const progress = await this.httpClient.get<{
+      const progress = await this.ensureHttpClient().get<{
         status?: string;
         error?: unknown;
       }>(`/datasets/v3/progress/${snapshotId}`);
@@ -91,7 +107,7 @@ export class TikTokBrightdataService {
     snapshotId: string,
     format: 'json' | 'ndjson' = 'json',
   ): Promise<unknown> {
-    const response = await this.httpClient.get(
+    const response = await this.ensureHttpClient().get(
       `/datasets/v3/snapshot/${snapshotId}`,
       {
         params: { format },

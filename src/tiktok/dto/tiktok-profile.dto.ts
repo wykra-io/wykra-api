@@ -5,4 +5,3 @@ export class TikTokProfileDTO {
   @IsString()
   profile!: string;
 }
-
