@@ -44,7 +44,7 @@ export interface InstagramProfileAnalysis {
 export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
   private readonly httpClient: AxiosInstance | null;
-  private readonly llmClient: ChatOpenAI;
+  private readonly llmClient: ChatOpenAI | null;
 
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
@@ -72,19 +72,26 @@ export class InstagramService {
     }
 
     // Initialize OpenRouter LLM client (OpenRouter uses OpenAI-compatible API)
-    this.llmClient = new ChatOpenAI({
-      modelName: this.openrouterConfig.model,
-      openAIApiKey: this.openrouterConfig.apiKey,
-      configuration: {
-        baseURL: this.openrouterConfig.baseUrl,
-        defaultHeaders: {
-          'HTTP-Referer': 'https://wykra-api.com',
-          'X-Title': 'Wykra API',
+    if (this.openrouterConfig.isConfigured) {
+      this.llmClient = new ChatOpenAI({
+        modelName: this.openrouterConfig.model,
+        openAIApiKey: this.openrouterConfig.apiKey,
+        configuration: {
+          baseURL: this.openrouterConfig.baseUrl,
+          defaultHeaders: {
+            'HTTP-Referer': 'https://wykra-api.com',
+            'X-Title': 'Wykra API',
+          },
         },
-      },
-      temperature: 0,
-      timeout: this.openrouterConfig.timeout,
-    });
+        temperature: 0,
+        timeout: this.openrouterConfig.timeout,
+      });
+    } else {
+      this.llmClient = null;
+      this.logger.warn(
+        'OpenRouter API key not configured. Instagram LLM features will be unavailable.',
+      );
+    }
   }
 
   private ensureHttpClient(): AxiosInstance {
@@ -94,6 +101,15 @@ export class InstagramService {
       );
     }
     return this.httpClient;
+  }
+
+  private ensureLLMClient(): ChatOpenAI {
+    if (!this.llmClient) {
+      throw new Error(
+        'OpenRouter API key is not configured. Please set OPENROUTER_API_KEY environment variable.',
+      );
+    }
+    return this.llmClient;
   }
 
   /**
@@ -406,7 +422,9 @@ Risk Level Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.llmClient.invoke([new HumanMessage(prompt)]);
+      const response = await this.ensureLLMClient().invoke([
+        new HumanMessage(prompt),
+      ]);
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
@@ -469,6 +487,11 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
   public async extractSearchContext(
     query: string,
   ): Promise<InstagramSearchContext> {
+    if (!this.openrouterConfig.isConfigured) {
+      throw new Error(
+        'OpenRouter API key is not configured. Please set OPENROUTER_API_KEY environment variable.',
+      );
+    }
     try {
       const client = new ChatOpenAI({
         modelName: 'anthropic/claude-3.5-sonnet',
@@ -1213,7 +1236,9 @@ Quality Score Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.llmClient.invoke([new HumanMessage(prompt)]);
+      const response = await this.ensureLLMClient().invoke([
+        new HumanMessage(prompt),
+      ]);
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       // Record token usage metrics (always record the call)

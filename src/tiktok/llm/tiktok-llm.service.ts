@@ -17,8 +17,8 @@ import { extractHashtags, normalizeCountryCode } from '../utils/tiktok.utils';
 @Injectable()
 export class TikTokLLMService {
   private readonly logger = new Logger(TikTokLLMService.name);
-  private readonly defaultClient: ChatOpenAI;
-  private readonly sonnetClient: ChatOpenAI;
+  private readonly defaultClient: ChatOpenAI | null;
+  private readonly sonnetClient: ChatOpenAI | null;
 
   /**
    * Checks if a string contains emojis
@@ -36,28 +36,54 @@ export class TikTokLLMService {
     private readonly metricsService: MetricsService,
   ) {
     // OpenRouter uses OpenAI-compatible API
-    const baseConfig = {
-      openAIApiKey: this.openrouterConfig.apiKey,
-      configuration: {
-        baseURL: this.openrouterConfig.baseUrl,
-        defaultHeaders: {
-          'HTTP-Referer': 'https://wykra-api.com',
-          'X-Title': 'Wykra API',
+    if (this.openrouterConfig.isConfigured) {
+      const baseConfig = {
+        openAIApiKey: this.openrouterConfig.apiKey!,
+        configuration: {
+          baseURL: this.openrouterConfig.baseUrl,
+          defaultHeaders: {
+            'HTTP-Referer': 'https://wykra-api.com',
+            'X-Title': 'Wykra API',
+          },
         },
-      },
-      temperature: 0,
-      timeout: this.openrouterConfig.timeout,
-    };
+        temperature: 0,
+        timeout: this.openrouterConfig.timeout,
+      };
 
-    this.defaultClient = new ChatOpenAI({
-      ...baseConfig,
-      modelName: this.openrouterConfig.model,
-    });
+      this.defaultClient = new ChatOpenAI({
+        ...baseConfig,
+        modelName: this.openrouterConfig.model,
+      });
 
-    this.sonnetClient = new ChatOpenAI({
-      ...baseConfig,
-      modelName: 'anthropic/claude-3.5-sonnet',
-    });
+      this.sonnetClient = new ChatOpenAI({
+        ...baseConfig,
+        modelName: 'anthropic/claude-3.5-sonnet',
+      });
+    } else {
+      this.defaultClient = null;
+      this.sonnetClient = null;
+      this.logger.warn(
+        'OpenRouter API key not configured. TikTok LLM features will be unavailable.',
+      );
+    }
+  }
+
+  private ensureDefaultClient(): ChatOpenAI {
+    if (!this.defaultClient) {
+      throw new Error(
+        'OpenRouter API key is not configured. Please set OPENROUTER_API_KEY environment variable.',
+      );
+    }
+    return this.defaultClient;
+  }
+
+  private ensureSonnetClient(): ChatOpenAI {
+    if (!this.sonnetClient) {
+      throw new Error(
+        'OpenRouter API key is not configured. Please set OPENROUTER_API_KEY environment variable.',
+      );
+    }
+    return this.sonnetClient;
   }
 
   public async analyzeProfile(profileData: TikTokProfile): Promise<TikTokAnalysisResult> {
@@ -239,7 +265,7 @@ Quality Score Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.defaultClient.invoke([new HumanMessage(prompt)]);
+      const response = await this.ensureDefaultClient().invoke([new HumanMessage(prompt)]);
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
@@ -321,7 +347,7 @@ Return the result strictly as a JSON object with these fields (keys: category, r
 User query: '${query}'`;
 
       const llmStartTime = Date.now();
-      const response = await this.sonnetClient.invoke([new HumanMessage(prompt)]);
+      const response = await this.ensureSonnetClient().invoke([new HumanMessage(prompt)]);
       const llmDuration = (Date.now() - llmStartTime) / 1000;
       const responseText = response.content as string;
 
@@ -596,7 +622,7 @@ Risk Level Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.defaultClient.invoke([new HumanMessage(prompt)]);
+      const response = await this.ensureDefaultClient().invoke([new HumanMessage(prompt)]);
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
