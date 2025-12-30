@@ -51,16 +51,14 @@ export class TikTokBrightdataService {
     triggerBody: unknown[],
     params: Record<string, string>,
   ): Promise<{ snapshot_id: string }> {
-    const response = await this.ensureHttpClient().post<{ snapshot_id: string }>(
-      '/datasets/v3/trigger',
-      triggerBody,
-      {
-        params: {
-          dataset_id: datasetId,
-          ...params,
-        },
+    const response = await this.ensureHttpClient().post<{
+      snapshot_id: string;
+    }>('/datasets/v3/trigger', triggerBody, {
+      params: {
+        dataset_id: datasetId,
+        ...params,
       },
-    );
+    });
 
     if (!response.data?.snapshot_id) {
       throw new Error('BrightData trigger did not return snapshot_id');

@@ -72,10 +72,11 @@ export class InstagramService {
     }
 
     // Initialize OpenRouter LLM client (OpenRouter uses OpenAI-compatible API)
-    if (this.openrouterConfig.isConfigured) {
+    const apiKey = this.openrouterConfig.apiKey;
+    if (apiKey) {
       this.llmClient = new ChatOpenAI({
         modelName: this.openrouterConfig.model,
-        openAIApiKey: this.openrouterConfig.apiKey,
+        openAIApiKey: apiKey,
         configuration: {
           baseURL: this.openrouterConfig.baseUrl,
           defaultHeaders: {

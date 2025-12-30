@@ -36,9 +36,10 @@ export class TikTokLLMService {
     private readonly metricsService: MetricsService,
   ) {
     // OpenRouter uses OpenAI-compatible API
-    if (this.openrouterConfig.isConfigured) {
+    const apiKey = this.openrouterConfig.apiKey;
+    if (apiKey) {
       const baseConfig = {
-        openAIApiKey: this.openrouterConfig.apiKey!,
+        openAIApiKey: apiKey,
         configuration: {
           baseURL: this.openrouterConfig.baseUrl,
           defaultHeaders: {
@@ -86,7 +87,9 @@ export class TikTokLLMService {
     return this.sonnetClient;
   }
 
-  public async analyzeProfile(profileData: TikTokProfile): Promise<TikTokAnalysisResult> {
+  public async analyzeProfile(
+    profileData: TikTokProfile,
+  ): Promise<TikTokAnalysisResult> {
     try {
       this.logger.log('Processing TikTok profile data with OpenRouter LLM');
 
@@ -265,7 +268,9 @@ Quality Score Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureDefaultClient().invoke([new HumanMessage(prompt)]);
+      const response = await this.ensureDefaultClient().invoke([
+        new HumanMessage(prompt),
+      ]);
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
@@ -324,7 +329,9 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
     }
   }
 
-  public async extractSearchContext(query: string): Promise<TikTokSearchContext> {
+  public async extractSearchContext(
+    query: string,
+  ): Promise<TikTokSearchContext> {
     try {
       const prompt = `Extract structured context from the user query about finding TikTok creators.
 
@@ -347,7 +354,9 @@ Return the result strictly as a JSON object with these fields (keys: category, r
 User query: '${query}'`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureSonnetClient().invoke([new HumanMessage(prompt)]);
+      const response = await this.ensureSonnetClient().invoke([
+        new HumanMessage(prompt),
+      ]);
       const llmDuration = (Date.now() - llmStartTime) / 1000;
       const responseText = response.content as string;
 
@@ -386,7 +395,8 @@ User query: '${query}'`;
         results_count:
           typeof parsed.results_count === 'number'
             ? parsed.results_count
-            : parsed.results_count && !Number.isNaN(Number(parsed.results_count))
+            : parsed.results_count &&
+                !Number.isNaN(Number(parsed.results_count))
               ? Number(parsed.results_count)
               : null,
         location: rawLocation,
@@ -403,7 +413,10 @@ User query: '${query}'`;
         'tiktok_search_context',
         'api_error',
       );
-      this.logger.error('Error extracting TikTok search context with LLM:', error);
+      this.logger.error(
+        'Error extracting TikTok search context with LLM:',
+        error,
+      );
       this.sentry.sendException(error, { query });
       return {
         category: null,
@@ -482,7 +495,9 @@ Return ONLY a JSON object with the following shape:
   "relevance": 0-100
 }`;
 
-    const response = await this.sonnetClient.invoke([new HumanMessage(prompt)]);
+    const response = await this.ensureSonnetClient().invoke([
+      new HumanMessage(prompt),
+    ]);
     const responseText = response.content as string;
 
     const parsed =
@@ -543,7 +558,8 @@ Return ONLY a JSON object with the following shape:
             'unknown',
           num_likes:
             (typeof c.num_likes === 'number' && c.num_likes) ||
-            (typeof c.num_likes === 'string' && !Number.isNaN(Number(c.num_likes))
+            (typeof c.num_likes === 'string' &&
+            !Number.isNaN(Number(c.num_likes))
               ? Number(c.num_likes)
               : 0),
           num_replies:
@@ -622,7 +638,9 @@ Risk Level Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureDefaultClient().invoke([new HumanMessage(prompt)]);
+      const response = await this.ensureDefaultClient().invoke([
+        new HumanMessage(prompt),
+      ]);
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
@@ -727,4 +745,3 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
     }
   }
 }
-
