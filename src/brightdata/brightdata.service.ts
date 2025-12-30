@@ -16,21 +16,37 @@ import {
 @Injectable()
 export class BrightdataService {
   private readonly logger = new Logger(BrightdataService.name);
-  private readonly httpClient: AxiosInstance;
+  private readonly httpClient: AxiosInstance | null;
 
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
     private readonly sentry: SentryClientService,
     private readonly metricsService: MetricsService,
   ) {
-    this.httpClient = axios.create({
-      baseURL: this.brightdataConfig.baseUrl,
-      timeout: this.brightdataConfig.timeout,
-      headers: {
-        Authorization: `Bearer ${this.brightdataConfig.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    if (this.brightdataConfig.isConfigured) {
+      this.httpClient = axios.create({
+        baseURL: this.brightdataConfig.baseUrl,
+        timeout: this.brightdataConfig.timeout,
+        headers: {
+          Authorization: `Bearer ${this.brightdataConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+    } else {
+      this.httpClient = null;
+      this.logger.warn(
+        'BrightData API key not configured. BrightData features will be unavailable.',
+      );
+    }
+  }
+
+  private ensureHttpClient(): AxiosInstance {
+    if (!this.httpClient) {
+      throw new Error(
+        'BrightData API key is not configured. Please set BRIGHTDATA_API_KEY environment variable.',
+      );
+    }
+    return this.httpClient;
   }
 
   /**
@@ -66,7 +82,7 @@ export class BrightdataService {
         include_errors: 'true',
       };
 
-      const response = await this.httpClient.post<unknown>(
+      const response = await this.ensureHttpClient().post<unknown>(
         endpoint,
         requestBody,
         {
@@ -250,7 +266,7 @@ export class BrightdataService {
         include_errors: 'true',
       };
 
-      const response = await this.httpClient.post<unknown>(
+      const response = await this.ensureHttpClient().post<unknown>(
         endpoint,
         requestBody,
         {
@@ -372,7 +388,7 @@ export class BrightdataService {
         include_errors: 'true',
       };
 
-      const response = await this.httpClient.post<unknown>(
+      const response = await this.ensureHttpClient().post<unknown>(
         endpoint,
         requestBody,
         {

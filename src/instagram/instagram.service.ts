@@ -43,7 +43,7 @@ export interface InstagramProfileAnalysis {
 @Injectable()
 export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
-  private readonly httpClient: AxiosInstance;
+  private readonly httpClient: AxiosInstance | null;
   private readonly llmClient: ChatOpenAI;
 
   constructor(
@@ -55,14 +55,21 @@ export class InstagramService {
     private readonly searchProfilesRepo: InstagramSearchProfilesRepository,
     private readonly metricsService: MetricsService,
   ) {
-    this.httpClient = axios.create({
-      baseURL: this.brightdataConfig.baseUrl,
-      timeout: this.brightdataConfig.timeout,
-      headers: {
-        Authorization: `Bearer ${this.brightdataConfig.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    if (this.brightdataConfig.isConfigured) {
+      this.httpClient = axios.create({
+        baseURL: this.brightdataConfig.baseUrl,
+        timeout: this.brightdataConfig.timeout,
+        headers: {
+          Authorization: `Bearer ${this.brightdataConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+    } else {
+      this.httpClient = null;
+      this.logger.warn(
+        'BrightData API key not configured. Instagram BrightData features will be unavailable.',
+      );
+    }
 
     // Initialize OpenRouter LLM client (OpenRouter uses OpenAI-compatible API)
     this.llmClient = new ChatOpenAI({
@@ -78,6 +85,15 @@ export class InstagramService {
       temperature: 0,
       timeout: this.openrouterConfig.timeout,
     });
+  }
+
+  private ensureHttpClient(): AxiosInstance {
+    if (!this.httpClient) {
+      throw new Error(
+        'BrightData API key is not configured. Please set BRIGHTDATA_API_KEY environment variable.',
+      );
+    }
+    return this.httpClient;
   }
 
   /**
@@ -200,7 +216,7 @@ export class InstagramService {
         limit_per_input: '50',
       };
 
-      const response = await this.httpClient.post<unknown>(
+      const response = await this.ensureHttpClient().post<unknown>(
         endpoint,
         requestBody,
         {
@@ -629,7 +645,7 @@ User query: '${query}'`;
         discover_by: 'user_name',
       };
 
-      const response = await this.httpClient.post<unknown>(
+      const response = await this.ensureHttpClient().post<unknown>(
         endpoint,
         requestBody,
         {
@@ -732,7 +748,7 @@ User query: '${query}'`;
         type: 'url_collection',
       };
 
-      const response = await this.httpClient.post<unknown>(
+      const response = await this.ensureHttpClient().post<unknown>(
         endpoint,
         requestBody,
         {

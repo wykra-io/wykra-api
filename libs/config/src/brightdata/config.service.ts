@@ -5,8 +5,12 @@ import { ConfigService } from '@nestjs/config';
 export class BrightdataConfigService {
   constructor(private readonly config: ConfigService) {}
 
-  public get apiKey(): string {
-    return this.config.getOrThrow<string>('brightdata.apiKey');
+  public get apiKey(): string | undefined {
+    return this.config.get<string>('brightdata.apiKey');
+  }
+
+  public get isConfigured(): boolean {
+    return !!this.apiKey;
   }
 
   public get baseUrl(): string {
