@@ -5,8 +5,12 @@ import { ConfigService } from '@nestjs/config';
 export class OpenrouterConfigService {
   constructor(private readonly config: ConfigService) {}
 
-  public get apiKey(): string {
-    return this.config.getOrThrow<string>('openrouter.apiKey');
+  public get apiKey(): string | undefined {
+    return this.config.get<string>('openrouter.apiKey');
+  }
+
+  public get isConfigured(): boolean {
+    return !!this.apiKey;
   }
 
   public get baseUrl(): string {

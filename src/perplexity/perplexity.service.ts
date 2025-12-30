@@ -31,7 +31,7 @@ export class PerplexityService {
     };
     temperature: number;
     timeout: number;
-  };
+  } | null;
 
   constructor(
     private readonly openrouterConfig: OpenrouterConfigService,
@@ -39,18 +39,34 @@ export class PerplexityService {
     private readonly metricsService: MetricsService,
   ) {
     // Base configuration for creating ChatOpenAI instances
-    this.baseConfig = {
-      openAIApiKey: this.openrouterConfig.apiKey,
-      configuration: {
-        baseURL: this.openrouterConfig.baseUrl,
-        defaultHeaders: {
-          'HTTP-Referer': 'https://wykra-api.com',
-          'X-Title': 'Wykra API - Perplexity',
+    if (this.openrouterConfig.isConfigured) {
+      this.baseConfig = {
+        openAIApiKey: this.openrouterConfig.apiKey!,
+        configuration: {
+          baseURL: this.openrouterConfig.baseUrl,
+          defaultHeaders: {
+            'HTTP-Referer': 'https://wykra-api.com',
+            'X-Title': 'Wykra API - Perplexity',
+          },
         },
-      },
-      temperature: 0.7,
-      timeout: this.openrouterConfig.timeout,
-    };
+        temperature: 0.7,
+        timeout: this.openrouterConfig.timeout,
+      };
+    } else {
+      this.baseConfig = null;
+      this.logger.warn(
+        'OpenRouter API key not configured. Perplexity features will be unavailable.',
+      );
+    }
+  }
+
+  private ensureBaseConfig() {
+    if (!this.baseConfig) {
+      throw new Error(
+        'OpenRouter API key is not configured. Please set OPENROUTER_API_KEY environment variable.',
+      );
+    }
+    return this.baseConfig;
   }
 
   /**
@@ -58,7 +74,7 @@ export class PerplexityService {
    */
   private createClient(model: string): ChatOpenAI {
     return new ChatOpenAI({
-      ...this.baseConfig,
+      ...this.ensureBaseConfig(),
       modelName: model,
     });
   }
