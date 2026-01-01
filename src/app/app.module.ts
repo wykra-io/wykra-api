@@ -43,15 +43,22 @@ import { TasksModule } from '../tasks';
           `Connecting to database: ${config.host}:${config.port}/${config.database} as ${config.username} (using ${hasDatabaseUrl ? 'DATABASE_URL' : 'individual vars'})`,
         );
 
-        if (process.env.NODE_ENV === 'production' && config.host === 'localhost') {
+        if (
+          process.env.NODE_ENV === 'production' &&
+          config.host === 'localhost'
+        ) {
           logger.error(
             '❌ ERROR: Attempting to connect to localhost in production!',
           );
           logger.error(
             '   This usually means DATABASE_URL or DB_* variables are not set.',
           );
+          logger.error('   Please check your Railway environment variables.');
           logger.error(
-            '   Please check your Railway environment variables.',
+            '   Railway PostgreSQL services provide DATABASE_URL automatically when linked.',
+          );
+          logger.error(
+            '   Go to your app service → Variables tab to verify DATABASE_URL is set.',
           );
         }
 
