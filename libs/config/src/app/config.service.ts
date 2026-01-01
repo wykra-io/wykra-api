@@ -22,7 +22,11 @@ export class AppConfigService {
   }
 
   public get port(): number {
-    return this.config.getOrThrow<number>('app.port');
+    const port = this.config.get<string | number>('app.port');
+    if (port === undefined) {
+      return 3000; // Default fallback
+    }
+    return typeof port === 'string' ? parseInt(port, 10) : port;
   }
 
   public get globalPrefix(): string {

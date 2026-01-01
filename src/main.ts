@@ -31,10 +31,11 @@ async function bootstrap() {
 
   useContainer(app.select(AppModule), { fallbackOnErrors: true });
 
-  await app.listen(config.port, config.host);
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : config.port;
+  await app.listen(PORT, '0.0.0.0');
 
   Logger.log(
-    `Listening at http://${config.host}:${config.port}/${config.globalPrefix}`,
+    `Listening at http://0.0.0.0:${PORT}/${config.globalPrefix}`,
     'WykraAPI',
   );
 }
