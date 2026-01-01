@@ -36,30 +36,31 @@ import { TasksModule } from '../tasks';
     TypeOrmModule.forRootAsync({
       imports: [DbConfigModule],
       useFactory: (config: DbConfigService) => {
-        // Log connection details (without password) for debugging
         const logger = new Logger('TypeORM');
         const hasDatabaseUrl = !!process.env.DATABASE_URL;
         logger.log(
           `Connecting to database: ${config.host}:${config.port}/${config.database} as ${config.username} (using ${hasDatabaseUrl ? 'DATABASE_URL' : 'individual vars'})`,
         );
 
-        if (
-          process.env.NODE_ENV === 'production' &&
-          config.host === 'localhost'
-        ) {
-          logger.error(
-            '❌ ERROR: Attempting to connect to localhost in production!',
+        if (config.host === 'localhost' || config.host === '127.0.0.1') {
+          logger.warn(
+            '⚠️  WARNING: Attempting to connect to localhost database!',
           );
-          logger.error(
-            '   This usually means DATABASE_URL or DB_* variables are not set.',
+          logger.warn(
+            '   This usually means DATABASE_URL or DB_* variables are not set correctly.',
           );
-          logger.error('   Please check your Railway environment variables.');
-          logger.error(
-            '   Railway PostgreSQL services provide DATABASE_URL automatically when linked.',
-          );
-          logger.error(
-            '   Go to your app service → Variables tab to verify DATABASE_URL is set.',
-          );
+          logger.warn('   Please check your Railway environment variables.');
+          if (!hasDatabaseUrl) {
+            logger.warn(
+              '   DATABASE_URL is not set. Railway PostgreSQL services provide this automatically when linked.',
+            );
+            logger.warn(
+              '   Go to your app service → Variables tab to verify DATABASE_URL is set.',
+            );
+            logger.warn(
+              '   Or set individual variables: DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, DB_DATABASE',
+            );
+          }
         }
 
         return {
