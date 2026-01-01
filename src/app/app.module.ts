@@ -38,9 +38,22 @@ import { TasksModule } from '../tasks';
       useFactory: (config: DbConfigService) => {
         // Log connection details (without password) for debugging
         const logger = new Logger('TypeORM');
+        const hasDatabaseUrl = !!process.env.DATABASE_URL;
         logger.log(
-          `Connecting to database: ${config.host}:${config.port}/${config.database} as ${config.username}`,
+          `Connecting to database: ${config.host}:${config.port}/${config.database} as ${config.username} (using ${hasDatabaseUrl ? 'DATABASE_URL' : 'individual vars'})`,
         );
+
+        if (process.env.NODE_ENV === 'production' && config.host === 'localhost') {
+          logger.error(
+            '❌ ERROR: Attempting to connect to localhost in production!',
+          );
+          logger.error(
+            '   This usually means DATABASE_URL or DB_* variables are not set.',
+          );
+          logger.error(
+            '   Please check your Railway environment variables.',
+          );
+        }
 
         return {
           type: 'postgres',

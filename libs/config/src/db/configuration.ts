@@ -23,6 +23,19 @@ export default registerAs('db', () => {
     };
   }
 
+  // In production, warn if no database config is found
+  const hasIndividualVars =
+    env.DB_HOST || env.DB_USERNAME || env.DB_PASSWORD || env.DB_DATABASE;
+
+  if (env.NODE_ENV === 'production' && !hasIndividualVars) {
+    console.warn(
+      '⚠️  WARNING: No DATABASE_URL or DB_* environment variables found in production!',
+    );
+    console.warn(
+      '   Please set DATABASE_URL or DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, DB_DATABASE',
+    );
+  }
+
   return {
     host: env.DB_HOST || 'localhost',
     port: env.DB_PORT || '5432',
