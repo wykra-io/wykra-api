@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
@@ -35,18 +35,31 @@ import { TasksModule } from '../tasks';
     TasksModule,
     TypeOrmModule.forRootAsync({
       imports: [DbConfigModule],
-      useFactory: (config: DbConfigService) => ({
-        type: 'postgres',
-        host: config.host,
-        port: config.port,
-        username: config.username,
-        password: config.password,
-        database: config.database,
-        synchronize: config.synchronize,
-        logging: config.logging,
-        entities: [Task, InstagramSearchProfile, TikTokSearchProfile],
-        ssl: config.ssl,
-      }),
+      useFactory: (config: DbConfigService) => {
+        // Log connection details (without password) for debugging
+        const logger = new Logger('TypeORM');
+        logger.log(
+          `Connecting to database: ${config.host}:${config.port}/${config.database} as ${config.username}`,
+        );
+
+        return {
+          type: 'postgres',
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+          database: config.database,
+          synchronize: config.synchronize,
+          logging: config.logging,
+          entities: [Task, InstagramSearchProfile, TikTokSearchProfile],
+          ssl: config.ssl,
+          // Add retry configuration for Railway
+          retryAttempts: 10,
+          retryDelay: 3000,
+          // Connection timeout
+          connectTimeoutMS: 10000,
+        };
+      },
       inject: [DbConfigService],
     }),
   ],

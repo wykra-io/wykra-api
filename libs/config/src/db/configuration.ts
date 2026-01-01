@@ -5,16 +5,21 @@ export default registerAs('db', () => {
   if (env.DATABASE_URL) {
     const dbUrl = env.DATABASE_URL.replace(/^postgres:\/\//, 'postgresql://');
     const url = new URL(dbUrl);
+
+    const database = url.pathname.slice(1) || 'postgres';
+
+    const isProduction = env.NODE_ENV === 'production';
+
     return {
       host: url.hostname,
       port: url.port || '5432',
       username: url.username,
       password: url.password,
-      database: url.pathname.slice(1),
+      database,
       synchronize: env.DB_SYNCHRONIZE === 'true',
       logging: env.DB_LOGGING === 'true',
-      ssl:
-        env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      // Railway requires SSL for database connections
+      ssl: isProduction ? { rejectUnauthorized: false } : false,
     };
   }
 
