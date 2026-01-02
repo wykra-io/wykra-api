@@ -39,7 +39,7 @@ RUN addgroup -g 1001 -S nodejs && \
 RUN chown -R nestjs:nodejs /app
 USER nestjs
 
-# Expose port (Railway will set PORT env var)
+# Expose port
 EXPOSE ${PORT:-3000}
 
 # Health check
