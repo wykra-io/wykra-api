@@ -126,7 +126,6 @@ export class PerplexityService {
 
         // Invoke the LLM
         const response = await llmClient.invoke(messages);
-        console.log(`response (iteration ${iteration}): `, response);
 
         // Accumulate content
         const responseContent = response.content as string;
@@ -329,8 +328,6 @@ Return only the JSON array, without any explanations or extra text.`;
       const hashtagsResponse = await this.chat({
         message: hashtagsPrompt,
       });
-
-      console.log('hashtagsResponse: ', hashtagsResponse.content);
 
       // Parse hashtags from the first response
       let hashtags: HashtagData[] = [];
