@@ -1,3 +1,5 @@
+import { CacheModule } from '@nestjs/cache-manager';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -14,7 +16,7 @@ import {
 import { SentryClientModule } from '@libs/sentry';
 
 import { AppController } from './app.controller';
-import { ApiTokenGuard, AuthModule } from '../auth';
+import { ApiTokenGuard, ApiTokenThrottlerGuard, AuthModule } from '../auth';
 import { BrightdataModule } from '../brightdata';
 import { InstagramModule } from '../instagram';
 import { TikTokModule } from '../tiktok';
@@ -27,11 +29,18 @@ import { TasksModule } from '../tasks';
     AppConfigModule,
     AuthModule,
     BrightdataModule,
+    CacheModule.register(),
     DbConfigModule,
     EventEmitterModule.forRoot(),
     InstagramModule,
     TikTokModule,
     MetricsModule,
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60 * 60 * 1000, // 1 hour (ms)
+        limit: 5,
+      },
+    ]),
     PerplexityModule,
     SentryClientModule,
     SentryModule.forRoot(),
@@ -67,6 +76,10 @@ import { TasksModule } from '../tasks';
     {
       provide: APP_GUARD,
       useClass: ApiTokenGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ApiTokenThrottlerGuard,
     },
     {
       provide: APP_INTERCEPTOR,

@@ -45,8 +45,10 @@ export class TikTokController {
    * @param {TikTokProfileDTO} dto - Profile data containing the TikTok profile.
    *
    * @returns {Promise<{ taskId: string }>} The created task ID.
+   *
+   * DISABLED: This endpoint is currently disabled.
    */
-  @Post('profile/comments/suspicious')
+  // @Post('profile/comments/suspicious')
   public async commentsSuspicious(
     @Body() dto: TikTokProfileDTO,
   ): Promise<{ taskId: string }> {
