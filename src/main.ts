@@ -14,16 +14,14 @@ async function bootstrap() {
 
   // Proxy Grafana requests to Grafana service
   const grafanaUrl = process.env.GRAFANA_INTERNAL_URL || 'http://grafana:3000';
-  app.use(
-    '/grafana',
-    createProxyMiddleware({
-      target: grafanaUrl,
-      changeOrigin: true,
-      pathRewrite: {
-        '^/grafana': '', // Remove /grafana prefix when forwarding to Grafana
-      },
-      onProxyReq: (proxyReq, req) => {
-        // Set X-Forwarded headers for Grafana
+  const grafanaProxy = createProxyMiddleware({
+    target: grafanaUrl,
+    changeOrigin: true,
+    pathRewrite: {
+      '^/grafana': '',
+    },
+    on: {
+      proxyReq: (proxyReq, req) => {
         proxyReq.setHeader('X-Forwarded-Host', req.headers.host || '');
         proxyReq.setHeader(
           'X-Forwarded-Proto',
@@ -31,8 +29,9 @@ async function bootstrap() {
         );
         proxyReq.setHeader('X-Forwarded-Prefix', '/grafana');
       },
-    }),
-  );
+    },
+  });
+  app.use('/grafana', grafanaProxy);
 
   app.setGlobalPrefix(config.globalPrefix, {
     exclude: ['/metrics', '/grafana'],
