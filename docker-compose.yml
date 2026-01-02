@@ -73,12 +73,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      grafana:
+        condition: service_started
     networks:
       - wykra-network
     volumes:
       - ./db/migrations:/app/db/migrations:ro
-    networks:
-      - wykra-network
 
   # Prometheus - Metrics Collection
   prometheus:
@@ -128,9 +128,10 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3001}
-    ports:
-      - "0.0.0.0:${GRAFANA_PORT:-3001}:3000"
+      - GF_SERVER_SERVE_FROM_SUBPATH=true
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana}
+      - GF_SERVER_DOMAIN=${GRAFANA_DOMAIN:-localhost}
+    # Port not exposed - accessed via API proxy at /grafana
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
