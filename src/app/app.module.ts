@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -9,10 +9,12 @@ import {
   InstagramSearchProfile,
   Task,
   TikTokSearchProfile,
+  User,
 } from '@libs/entities';
 import { SentryClientModule } from '@libs/sentry';
 
 import { AppController } from './app.controller';
+import { ApiTokenGuard, AuthModule } from '../auth';
 import { BrightdataModule } from '../brightdata';
 import { InstagramModule } from '../instagram';
 import { TikTokModule } from '../tiktok';
@@ -23,6 +25,7 @@ import { TasksModule } from '../tasks';
 @Module({
   imports: [
     AppConfigModule,
+    AuthModule,
     BrightdataModule,
     DbConfigModule,
     EventEmitterModule.forRoot(),
@@ -45,7 +48,7 @@ import { TasksModule } from '../tasks';
           database: config.database,
           synchronize: config.synchronize,
           logging: config.logging,
-          entities: [Task, InstagramSearchProfile, TikTokSearchProfile],
+          entities: [Task, InstagramSearchProfile, TikTokSearchProfile, User],
           ssl: config.ssl,
           retryAttempts: 10,
           retryDelay: 3000,
@@ -60,6 +63,10 @@ import { TasksModule } from '../tasks';
     {
       provide: APP_FILTER,
       useClass: SentryGlobalFilter,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ApiTokenGuard,
     },
     {
       provide: APP_INTERCEPTOR,
