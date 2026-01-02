@@ -1,0 +1,83 @@
+{
+	"info": {
+		"_postman_id": "d4e5f6a7-b8c9-0123-def0-123456789013",
+		"name": "Instagram API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Analyze profile",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{apiToken}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{apiUrl}}/api/v1/instagram/analysis?profile=username",
+					"host": [
+						"{{apiUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"instagram",
+						"analysis"
+					],
+					"query": [
+						{
+							"key": "profile",
+							"value": "username",
+							"description": "Instagram profile username"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Search profiles",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{apiToken}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"query\": \"Find up to 15 public Instagram accounts from Portugal who post about cooking and have not more than 50000 followers\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{apiUrl}}/api/v1/instagram/search",
+					"host": [
+						"{{apiUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"instagram",
+						"search"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
+

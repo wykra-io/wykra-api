@@ -2,33 +2,16 @@ import {
   Controller,
   Get,
   Param,
-  Post,
-  Body,
   HttpStatus,
   HttpException,
 } from '@nestjs/common';
 
-import { CreateTaskDto } from './dto';
+import { SkipThrottle } from '../auth/decorators/skip-throttle.decorator';
 import { TasksService } from './tasks.service';
 
 @Controller('tasks')
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
-
-  /**
-   * Creates a new background task.
-   *
-   * @param {CreateTaskDto} dto - Task creation data.
-   *
-   * @returns {Promise<{ taskId: string }>} The created task ID.
-   */
-  @Post()
-  public async createTask(
-    @Body() dto: CreateTaskDto,
-  ): Promise<{ taskId: string }> {
-    const taskId = await this.tasksService.createTask(dto.data);
-    return { taskId };
-  }
 
   /**
    * Gets the status of a task by its ID.
@@ -46,6 +29,7 @@ export class TasksController {
    *   tiktokProfiles: unknown[];
    * }>} The task status and related Instagram search profiles.
    */
+  @SkipThrottle()
   @Get(':id')
   public async getTaskStatus(@Param('id') id: string) {
     const { task, instagramProfiles, tiktokProfiles } =

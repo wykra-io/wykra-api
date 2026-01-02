@@ -46,8 +46,10 @@ export class InstagramController {
    * Creates a new Instagram suspicious comments analysis job (queued).
    *
    * Scrapes comments from the profile's recent posts and analyzes them for suspicious activity.
+   *
+   * DISABLED: This endpoint is currently disabled.
    */
-  @Post('profile/comments/suspicious')
+  // @Post('profile/comments/suspicious')
   public async commentsSuspicious(
     @Body() dto: InstagramProfileDTO,
   ): Promise<{ taskId: string }> {

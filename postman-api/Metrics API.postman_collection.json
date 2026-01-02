@@ -1,0 +1,27 @@
+{
+	"info": {
+		"_postman_id": "b8c9d0e1-f2a3-4567-1234-567890123457",
+		"name": "Metrics API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get metrics",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{apiUrl}}/metrics",
+					"host": [
+						"{{apiUrl}}"
+					],
+					"path": [
+						"metrics"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
+

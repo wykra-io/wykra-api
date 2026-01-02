@@ -1,0 +1,130 @@
+{
+	"info": {
+		"_postman_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+		"name": "BrightData API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get Google SERP",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{apiToken}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"keyword\": \"site:instagram.com \\\"AI tools\\\" OR \\\"data engineer\\\" OR \\\"#buildinpublic\\\"\",\n    \"url\": \"https://www.google.com/\",\n    \"language\": \"en\",\n    \"country\": \"US\",\n    \"startPage\": 1,\n    \"endPage\": 5\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{apiUrl}}/api/v1/brightdata/google-serp",
+					"host": [
+						"{{apiUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"brightdata",
+						"google-serp"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Google AI Mode",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{apiToken}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"items\": [\n        {\n            \"url\": \"https://www.google.com/\",\n            \"prompt\": \"What are the latest trends in AI?\",\n            \"country\": \"US\"\n        }\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{apiUrl}}/api/v1/brightdata/google-ai-mode",
+					"host": [
+						"{{apiUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"brightdata",
+						"google-ai-mode"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Perplexity Search",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{apiToken}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"url\": \"https://www.perplexity.ai/\",\n    \"prompt\": \"What are the latest trends in AI?\",\n    \"index\": 1\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{apiUrl}}/api/v1/brightdata/perplexity-search",
+					"host": [
+						"{{apiUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"brightdata",
+						"perplexity-search"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
+
