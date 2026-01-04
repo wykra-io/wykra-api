@@ -154,9 +154,9 @@ export class AuthService {
     return apiToken;
   }
 
-  public async githubAppBuildAuthorizeUrl(input?: {
+  public githubAppBuildAuthorizeUrl(input?: {
     returnTo?: string;
-  }): Promise<string> {
+  }): Promise<{ authorizeUrl: string; state: string; returnTo?: string }> {
     if (!this.githubConfig.isAppOauthConfigured) {
       throw new BadRequestException(
         'GitHub App OAuth is not configured on the server',
@@ -167,12 +167,6 @@ export class AuthService {
     if (returnTo) this.assertAllowedReturnTo(returnTo);
 
     const state = randomBytes(32).toString('base64url');
-    const cacheKey = `ghapp:state:${state}`;
-    await this.cache.set(
-      cacheKey,
-      { returnTo: returnTo || null },
-      GITHUB_AUTH_CACHE_TTL_SECONDS,
-    );
 
     const params = new URLSearchParams({
       client_id: this.githubConfig.appClientId!,
@@ -184,12 +178,16 @@ export class AuthService {
       params.set('scope', scopes);
     }
 
-    return `https://github.com/login/oauth/authorize?${params.toString()}`;
+    return Promise.resolve({
+      authorizeUrl: `https://github.com/login/oauth/authorize?${params.toString()}`,
+      state,
+      returnTo: returnTo || undefined,
+    });
   }
 
   public async githubAppCallbackToApiToken(input: {
     code: string;
-    state: string;
+    returnTo?: string;
   }): Promise<{ apiToken: string; returnTo?: string }> {
     if (!this.githubConfig.isAppOauthConfigured) {
       throw new BadRequestException(
@@ -198,26 +196,14 @@ export class AuthService {
     }
 
     const code = input.code?.trim();
-    const state = input.state?.trim();
-    if (!code || !state) {
-      throw new BadRequestException('Missing code or state');
+    if (!code) {
+      throw new BadRequestException('Missing code');
     }
-
-    const cacheKey = `ghapp:state:${state}`;
-    const stateData = await this.cache.get<{ returnTo: string | null }>(
-      cacheKey,
-    );
-    if (!stateData) {
-      throw new UnauthorizedException('Invalid or expired state');
-    }
-
-    // One-time use state
-    await this.cache.del(cacheKey);
 
     const ghToken = await this.exchangeGithubAppCodeForToken(code);
     const { token } = await this.githubAuthToApiTokenFromGithubToken(ghToken);
 
-    const returnTo = stateData.returnTo ?? undefined;
+    const returnTo = input.returnTo?.trim() || undefined;
     if (returnTo) this.assertAllowedReturnTo(returnTo);
 
     return { apiToken: token, returnTo };
