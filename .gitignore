@@ -80,3 +80,5 @@ dist/
 *.pid
 *.seed
 *.pid.lock
+
+apps/web/node_modules

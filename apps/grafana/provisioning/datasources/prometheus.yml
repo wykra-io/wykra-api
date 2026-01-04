@@ -1,0 +1,18 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Set PROMETHEUS_URL in the service environment.
+    # - docker-compose: http://prometheus:9090
+    # - Railway: your public/internal Prometheus URL (or Grafana Cloud Prometheus-compatible endpoint)
+    url: $__env{PROMETHEUS_URL}
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: "15s"
+      queryTimeout: "60s"
+      httpMethod: "POST"
+
+

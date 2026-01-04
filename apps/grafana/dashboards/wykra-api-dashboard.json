@@ -1,0 +1,65 @@
+{
+  "uid": "wykra-api-dashboard",
+  "title": "Wykra API Dashboard",
+  "tags": ["wykra", "api"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 0,
+  "refresh": "10s",
+  "panels": [
+    {
+      "title": "Request Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total[5m])",
+          "legendFormat": "{{method}} {{route}}",
+          "refId": "A",
+          "datasource": { "uid": "Prometheus", "type": "prometheus" }
+        }
+      ]
+    },
+    {
+      "title": "Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{status=~\"5..\"}[5m])",
+          "legendFormat": "{{status}}",
+          "refId": "A",
+          "datasource": { "uid": "Prometheus", "type": "prometheus" }
+        }
+      ]
+    },
+    {
+      "title": "Response Time (Average)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])",
+          "legendFormat": "Average - {{method}} {{route}}",
+          "refId": "A",
+          "datasource": { "uid": "Prometheus", "type": "prometheus" }
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes / 1024 / 1024",
+          "legendFormat": "Memory (MB)",
+          "refId": "A",
+          "datasource": { "uid": "Prometheus", "type": "prometheus" }
+        }
+      ]
+    }
+  ]
+}
+
+

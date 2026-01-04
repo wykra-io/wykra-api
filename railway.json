@@ -1,0 +1,16 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "services": {
+    "api": {
+      "root": "."
+    },
+    "web": {
+      "root": "apps/web"
+    },
+    "grafana": {
+      "root": "apps/grafana"
+    }
+  }
+}
+
+
