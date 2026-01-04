@@ -76,11 +76,7 @@ export class AuthController {
 
     res.cookie(GITHUB_APP_STATE_COOKIE, state, cookieOptions);
     if (returnTo) {
-      res.cookie(
-        GITHUB_APP_RETURNTO_COOKIE,
-        encodeURIComponent(returnTo),
-        cookieOptions,
-      );
+      res.cookie(GITHUB_APP_RETURNTO_COOKIE, returnTo, cookieOptions);
     } else {
       res.clearCookie(GITHUB_APP_RETURNTO_COOKIE, { path: '/' });
     }
@@ -130,7 +126,14 @@ export class AuthController {
     }
 
     const returnToRaw = cookies[GITHUB_APP_RETURNTO_COOKIE];
-    const returnTo = returnToRaw ? decodeURIComponent(returnToRaw) : undefined;
+    let returnTo: string | undefined;
+    if (returnToRaw) {
+      try {
+        returnTo = decodeURIComponent(returnToRaw);
+      } catch {
+        returnTo = returnToRaw;
+      }
+    }
 
     // one-time-ish use; clear even if later steps fail
     res.clearCookie(GITHUB_APP_STATE_COOKIE, { path: '/' });
