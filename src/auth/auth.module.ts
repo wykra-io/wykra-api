@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { User } from '@libs/entities/user.entity';
+import { GithubConfigModule } from '@libs/config';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -11,6 +12,7 @@ import { AuthService } from './auth.service';
   imports: [
     // In-memory cache (default). This satisfies the 5-min token cache requirement.
     CacheModule.register(),
+    GithubConfigModule,
     TypeOrmModule.forFeature([User]),
   ],
   controllers: [AuthController],

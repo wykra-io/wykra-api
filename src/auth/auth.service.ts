@@ -1,4 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { createHash, randomBytes } from 'crypto';
 import type { Cache } from 'cache-manager';
@@ -13,12 +18,14 @@ import {
 import type { GithubAuthData } from './interfaces/github-auth-data.interface';
 import type { AuthTokenResponse } from './interfaces/auth-token-response.interface';
 import { User } from '@libs/entities/user.entity';
+import { GithubConfigService } from '@libs/config';
 
 @Injectable()
 export class AuthService {
   constructor(
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
     @InjectRepository(User) private readonly usersRepo: Repository<User>,
+    private readonly githubConfig: GithubConfigService,
   ) {}
 
   public async githubAuthFromRequest(req: Request): Promise<GithubAuthData> {
@@ -72,11 +79,22 @@ export class AuthService {
     return authData;
   }
 
-  public async githubAuthToApiToken(req: Request): Promise<AuthTokenResponse> {
-    const gh = await this.githubAuthFromRequest(req);
+  public async githubAuthToApiTokenFromGithubToken(
+    githubToken: string,
+  ): Promise<AuthTokenResponse> {
+    const gh = await this.githubAuthFromToken(githubToken);
     const user = await this.upsertGithubUser(gh);
     const token = await this.rotateApiToken(user);
     return { token };
+  }
+
+  public async githubAuthToApiToken(req: Request): Promise<AuthTokenResponse> {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Missing token');
+    }
+    const token = auth.slice(7);
+    return this.githubAuthToApiTokenFromGithubToken(token);
   }
 
   public async apiAuthFromRequest(req: Request): Promise<User> {
@@ -134,5 +152,125 @@ export class AuthService {
     await this.usersRepo.save(user);
 
     return apiToken;
+  }
+
+  public async githubAppBuildAuthorizeUrl(input?: {
+    returnTo?: string;
+  }): Promise<string> {
+    if (!this.githubConfig.isAppOauthConfigured) {
+      throw new BadRequestException(
+        'GitHub App OAuth is not configured on the server',
+      );
+    }
+
+    const returnTo = input?.returnTo?.trim();
+    if (returnTo) this.assertAllowedReturnTo(returnTo);
+
+    const state = randomBytes(32).toString('base64url');
+    const cacheKey = `ghapp:state:${state}`;
+    await this.cache.set(
+      cacheKey,
+      { returnTo: returnTo || null },
+      GITHUB_AUTH_CACHE_TTL_SECONDS,
+    );
+
+    const params = new URLSearchParams({
+      client_id: this.githubConfig.appClientId!,
+      redirect_uri: this.githubConfig.appRedirectUri!,
+      state,
+    });
+    const scopes = this.githubConfig.appOauthScopes;
+    if (typeof scopes === 'string' && scopes.length) {
+      params.set('scope', scopes);
+    }
+
+    return `https://github.com/login/oauth/authorize?${params.toString()}`;
+  }
+
+  public async githubAppCallbackToApiToken(input: {
+    code: string;
+    state: string;
+  }): Promise<{ apiToken: string; returnTo?: string }> {
+    if (!this.githubConfig.isAppOauthConfigured) {
+      throw new BadRequestException(
+        'GitHub App OAuth is not configured on the server',
+      );
+    }
+
+    const code = input.code?.trim();
+    const state = input.state?.trim();
+    if (!code || !state) {
+      throw new BadRequestException('Missing code or state');
+    }
+
+    const cacheKey = `ghapp:state:${state}`;
+    const stateData = await this.cache.get<{ returnTo: string | null }>(
+      cacheKey,
+    );
+    if (!stateData) {
+      throw new UnauthorizedException('Invalid or expired state');
+    }
+
+    // One-time use state
+    await this.cache.del(cacheKey);
+
+    const ghToken = await this.exchangeGithubAppCodeForToken(code);
+    const { token } = await this.githubAuthToApiTokenFromGithubToken(ghToken);
+
+    const returnTo = stateData.returnTo ?? undefined;
+    if (returnTo) this.assertAllowedReturnTo(returnTo);
+
+    return { apiToken: token, returnTo };
+  }
+
+  private async exchangeGithubAppCodeForToken(code: string): Promise<string> {
+    const res = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'wykra-api',
+      },
+      body: JSON.stringify({
+        client_id: this.githubConfig.appClientId!,
+        client_secret: this.githubConfig.appClientSecret!,
+        code,
+        redirect_uri: this.githubConfig.appRedirectUri!,
+      }),
+    });
+
+    const json = (await res.json().catch(() => ({}))) as {
+      access_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+
+    if (!res.ok || !json.access_token) {
+      const msg =
+        json.error_description || json.error || 'OAuth exchange failed';
+      throw new UnauthorizedException(msg);
+    }
+
+    return json.access_token;
+  }
+
+  private assertAllowedReturnTo(returnTo: string): void {
+    let url: URL;
+    try {
+      url = new URL(returnTo);
+    } catch {
+      throw new BadRequestException('returnTo must be a valid absolute URL');
+    }
+
+    const allowed = this.githubConfig.appAllowedRedirectOrigins;
+    if (!allowed.length) {
+      throw new BadRequestException(
+        'Redirects are disabled: GITHUB_APP_ALLOWED_REDIRECT_ORIGINS is not set',
+      );
+    }
+
+    if (!allowed.includes(url.origin)) {
+      throw new BadRequestException('returnTo origin is not allowed');
+    }
   }
 }
