@@ -11,6 +11,9 @@ export class User extends Model {
   @Column({ name: 'github_login', type: 'text' })
   githubLogin!: string;
 
+  @Column({ name: 'github_avatar_url', type: 'text', nullable: true })
+  githubAvatarUrl!: string | null;
+
   @Column({ name: 'github_scopes', type: 'jsonb', nullable: true })
   githubScopes!: string[] | null;
 

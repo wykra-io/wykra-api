@@ -60,7 +60,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid GitHub token');
     }
 
-    const user = (await ghRes.json()) as { id: number; login: string };
+    const user = (await ghRes.json()) as {
+      id: number;
+      login: string;
+      avatar_url?: string;
+    };
     const scopes =
       ghRes.headers
         .get('x-oauth-scopes')
@@ -70,6 +74,7 @@ export class AuthService {
     const authData: GithubAuthData = {
       githubId: user.id,
       login: user.login,
+      avatarUrl: user.avatar_url,
       scopes: scopes.filter(Boolean),
     };
 
@@ -131,16 +136,36 @@ export class AuthService {
       user = this.usersRepo.create({
         githubId,
         githubLogin: gh.login,
+        githubAvatarUrl: gh.avatarUrl || null,
         githubScopes: gh.scopes,
         apiTokenHash: null,
         apiTokenCreatedAt: null,
       });
     } else {
       user.githubLogin = gh.login;
+      user.githubAvatarUrl = gh.avatarUrl || null;
       user.githubScopes = gh.scopes;
     }
 
     return await this.usersRepo.save(user);
+  }
+
+  public async logoutApiToken(req: Request, userId: number): Promise<void> {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Missing token');
+    }
+    const token = auth.slice(7);
+    if (!token) throw new UnauthorizedException('Missing token');
+
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const cacheKey = `api:${tokenHash}`;
+    await this.cache.del(cacheKey);
+
+    await this.usersRepo.update(
+      { id: userId },
+      { apiTokenHash: null, apiTokenCreatedAt: null },
+    );
   }
 
   private async rotateApiToken(user: User): Promise<string> {

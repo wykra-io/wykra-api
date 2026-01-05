@@ -29,6 +29,75 @@ body {
   gap: 10px;
 }
 
+.userMenuWrap {
+  position: relative;
+}
+
+.avatarButton {
+  border: 0;
+  cursor: pointer;
+  background: transparent;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  display: block;
+  border: 1px solid #e2e8f0;
+}
+
+.avatarFallback {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: #0f172a;
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #0f172a;
+}
+
+.userMenu {
+  position: absolute;
+  top: 46px;
+  right: 0;
+  width: 220px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(2, 6, 23, 0.18);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.userMenuHeader {
+  padding: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.userMenuName {
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.userMenuItem {
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  background: white;
+  color: #0f172a;
+  border-radius: 0;
+  font-weight: 700;
+}
+
+.userMenuItem:hover {
+  background: #f1f5f9;
+}
+
 .container {
   max-width: 980px;
   margin: 0 auto;

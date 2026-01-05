@@ -14,11 +14,18 @@ type TaskStatusResponse = {
   tiktokProfiles?: unknown[];
 };
 
+type MeResponse = {
+  githubLogin: string;
+  githubAvatarUrl: string | null;
+};
+
 export function App() {
   const apiBaseUrl: string = useMemo(() => getApiBaseUrl(), []);
 
   const [isAuthed, setIsAuthed] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [me, setMe] = useState<MeResponse | null>(null);
 
   const [taskId, setTaskId] = useState('');
   const [taskStatus, setTaskStatus] = useState<TaskStatusResponse | null>(null);
@@ -47,14 +54,31 @@ export function App() {
         document.title,
         window.location.pathname + window.location.search,
       );
-      return;
     }
 
     // Initial load: check stored token
+    let hasToken = false;
     try {
-      setIsAuthed(!!localStorage.getItem('wykraApiToken'));
+      hasToken = !!localStorage.getItem('wykraApiToken');
     } catch {
-      setIsAuthed(false);
+      hasToken = false;
+    }
+
+    if (!token) setIsAuthed(hasToken);
+
+    // If token exists (from hash or storage), fetch current user
+    if (token || hasToken) {
+      void (async () => {
+        try {
+          const meResp = await apiGet<MeResponse>(`/api/v1/auth/me`);
+          setMe(meResp);
+        } catch {
+          // Token invalid/expired → clear local auth state
+          setApiToken(null);
+          setIsAuthed(false);
+          setMe(null);
+        }
+      })();
     }
   }, []);
 
@@ -63,6 +87,19 @@ export function App() {
     const startUrl = new URL('/api/v1/auth/github/app/start', apiBaseUrl);
     startUrl.searchParams.set('returnTo', returnTo);
     window.location.assign(startUrl.toString());
+  }
+
+  async function logout() {
+    try {
+      await apiPost(`/api/v1/auth/logout`, {});
+    } catch {
+      // Even if API call fails, clear locally to unblock user
+    } finally {
+      setApiToken(null);
+      setIsAuthed(false);
+      setMe(null);
+      setUserMenuOpen(false);
+    }
   }
 
   async function fetchTask() {
@@ -115,27 +152,67 @@ export function App() {
               Sign in
             </button>
           ) : (
-            <button className="iconButton" type="button" aria-label="User">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
+            <div className="userMenuWrap">
+              <button
+                className="avatarButton"
+                type="button"
+                aria-label="User menu"
+                onClick={() => {
+                  setUserMenuOpen((v) => !v);
+                }}
               >
-                <path
-                  d="M20 21a8 8 0 0 0-16 0"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-              </svg>
-            </button>
+                {me?.githubAvatarUrl ? (
+                  <img
+                    className="avatar"
+                    src={me.githubAvatarUrl}
+                    alt={me.githubLogin}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="avatarFallback" aria-hidden="true">
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M20 21a8 8 0 0 0-16 0"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  </span>
+                )}
+              </button>
+
+              {userMenuOpen ? (
+                <div className="userMenu" role="menu">
+                  <div className="userMenuHeader">
+                    <div className="userMenuName">
+                      {me?.githubLogin || 'GitHub user'}
+                    </div>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      Signed in
+                    </div>
+                  </div>
+                  <button
+                    className="userMenuItem"
+                    type="button"
+                    onClick={() => void logout()}
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
       </div>

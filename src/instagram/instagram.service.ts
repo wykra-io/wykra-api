@@ -1420,4 +1420,29 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
 
     return taskId;
   }
+
+  /**
+   * Creates a new Instagram profile analysis job and queues it for processing.
+   */
+  public async profile(profile: string): Promise<string> {
+    const taskId = randomUUID();
+
+    await this.tasksRepo.create({
+      taskId,
+      status: TaskStatus.Pending,
+      result: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    });
+
+    await this.queueService.instagram.add('profile', {
+      taskId,
+      profile,
+    });
+
+    this.metricsService.recordTaskCreated('instagram_profile');
+
+    return taskId;
+  }
 }

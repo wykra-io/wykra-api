@@ -15,6 +15,7 @@ import { Public } from './decorators/public.decorator';
 import { AuthService } from './auth.service';
 import type { AuthTokenResponse } from './interfaces/auth-token-response.interface';
 import { GITHUB_AUTH_CACHE_TTL_SECONDS } from './constants';
+import { User } from '@libs/entities/user.entity';
 
 const GITHUB_APP_STATE_COOKIE = 'wykra_gh_state';
 const GITHUB_APP_RETURNTO_COOKIE = 'wykra_gh_returnTo';
@@ -48,6 +49,33 @@ export class AuthController {
   @Post('githubAuth')
   public async githubAuth(@Req() req: Request): Promise<AuthTokenResponse> {
     return this.authService.githubAuthToApiToken(req);
+  }
+
+  @Get('me')
+  public me(@Req() req: Request & { user?: User }): {
+    githubLogin: string;
+    githubAvatarUrl: string | null;
+  } {
+    const user = req.user;
+    if (!user) {
+      throw new UnauthorizedException('Missing user');
+    }
+    return {
+      githubLogin: user.githubLogin,
+      githubAvatarUrl: user.githubAvatarUrl ?? null,
+    };
+  }
+
+  @Post('logout')
+  public async logout(@Req() req: Request & { user?: User }): Promise<{
+    ok: true;
+  }> {
+    const user = req.user;
+    if (!user) {
+      throw new UnauthorizedException('Missing user');
+    }
+    await this.authService.logoutApiToken(req, user.id);
+    return { ok: true };
   }
 
   /**

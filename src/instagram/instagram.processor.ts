@@ -24,6 +24,11 @@ interface InstagramCommentsSuspiciousJobData {
   profile: string;
 }
 
+interface InstagramProfileJobData {
+  taskId: string;
+  profile: string;
+}
+
 @Processor(QueueName.Instagram)
 export class InstagramProcessor {
   private readonly logger = new Logger(InstagramProcessor.name);
@@ -334,6 +339,79 @@ Return only the list of URLs with no extra text.`;
         processingDuration,
         'instagram_search',
       );
+    }
+  }
+
+  /**
+   * Processes an Instagram profile analysis job.
+   */
+  @Process('profile')
+  public async profile(job: Job<InstagramProfileJobData>): Promise<void> {
+    const { taskId, profile } = job.data;
+    const startTime = Date.now();
+
+    // Track queue wait time
+    const queuedAt = job.timestamp;
+    const waitTime = (startTime - queuedAt) / 1000;
+    this.metricsService.recordTaskQueueWaitTime(
+      'instagram_profile',
+      'instagram',
+      waitTime,
+    );
+
+    try {
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Running,
+        startedAt: new Date(),
+      });
+
+      this.logger.log(
+        `Instagram profile task ${taskId} started for profile: ${profile}`,
+      );
+      this.metricsService.recordTaskStatusChange(
+        'running',
+        'instagram_profile',
+      );
+
+      const data = await this.instagramService.analyzeProfile(profile);
+      const result = JSON.stringify(data);
+      const processingDuration = (Date.now() - startTime) / 1000;
+
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Completed,
+        result,
+        completedAt: new Date(),
+      });
+
+      this.metricsService.recordTaskCompleted(
+        processingDuration,
+        'instagram_profile',
+      );
+      this.logger.log(
+        `Instagram profile task ${taskId} completed successfully`,
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+
+      this.logger.error(
+        `Instagram profile task ${taskId} failed: ${errorMessage}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      this.sentry.sendException(error, { taskId, profile });
+
+      const processingDuration = (Date.now() - startTime) / 1000;
+      await this.tasksRepo.update(taskId, {
+        status: TaskStatus.Failed,
+        error: errorMessage,
+        completedAt: new Date(),
+      });
+
+      this.metricsService.recordTaskFailed(
+        processingDuration,
+        'instagram_profile',
+      );
+      this.metricsService.recordTaskStatusChange('failed', 'instagram_profile');
     }
   }
 

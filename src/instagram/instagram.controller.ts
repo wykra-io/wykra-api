@@ -27,6 +27,17 @@ export class InstagramController {
   }
 
   /**
+   * Creates a new Instagram profile analysis task (queued).
+   */
+  @Post('profile')
+  public async profile(
+    @Body() dto: InstagramProfileDTO,
+  ): Promise<{ taskId: string }> {
+    const taskId = await this.instagramService.profile(dto.profile);
+    return { taskId };
+  }
+
+  /**
    * Creates a new Instagram search job.
    *
    * @param {SearchPostDto} dto - Search data containing the search query.
