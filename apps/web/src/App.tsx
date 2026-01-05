@@ -19,8 +19,6 @@ type MeResponse = {
   githubAvatarUrl: string | null;
 };
 
-type InstagramAnalysisResponse = Record<string, unknown>;
-
 export function App() {
   const apiBaseUrl: string = useMemo(() => getApiBaseUrl(), []);
 
@@ -43,8 +41,9 @@ export function App() {
   const [igProfile, setIgProfile] = useState('username');
   const [igAnalysisLoading, setIgAnalysisLoading] = useState(false);
   const [igAnalysisError, setIgAnalysisError] = useState<string | null>(null);
-  const [igAnalysisResult, setIgAnalysisResult] =
-    useState<InstagramAnalysisResponse | null>(null);
+  const [igAnalysisTaskId, setIgAnalysisTaskId] = useState('');
+  const [igAnalysisTaskStatus, setIgAnalysisTaskStatus] =
+    useState<TaskStatusResponse | null>(null);
 
   useEffect(() => {
     // OAuth callback redirects to `returnTo#token=...`
@@ -145,16 +144,33 @@ export function App() {
 
   async function runInstagramProfileAnalysis() {
     setIgAnalysisError(null);
-    setIgAnalysisResult(null);
+    setIgAnalysisTaskStatus(null);
     setIgAnalysisLoading(true);
     try {
       const profile = igProfile.trim();
       if (!profile) throw new Error('Profile is required');
-      const pathname = `/api/v1/instagram/analysis?profile=${encodeURIComponent(
-        String(profile),
-      )}`;
-      const resp = await apiGet<InstagramAnalysisResponse>(pathname);
-      setIgAnalysisResult(resp);
+      const resp = await apiPost<{ taskId: string }>(
+        `/api/v1/instagram/profile`,
+        { profile },
+      );
+      setIgAnalysisTaskId(resp.taskId);
+      setIgAnalysisTaskStatus(null);
+    } catch (e) {
+      setIgAnalysisError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIgAnalysisLoading(false);
+    }
+  }
+
+  async function fetchIgAnalysisTask() {
+    if (!igAnalysisTaskId.trim()) return;
+    setIgAnalysisError(null);
+    setIgAnalysisLoading(true);
+    try {
+      const data = await apiGet<TaskStatusResponse>(
+        `/api/v1/tasks/${igAnalysisTaskId}`,
+      );
+      setIgAnalysisTaskStatus(data);
     } catch (e) {
       setIgAnalysisError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -318,14 +334,13 @@ export function App() {
           />
           <div className="row" style={{ marginTop: 12 }}>
             <button
-              className="secondary"
               onClick={() => void runInstagramProfileAnalysis()}
               disabled={igAnalysisLoading || !igProfile.trim()}
             >
-              {igAnalysisLoading ? 'Analyzing…' : 'Analyze'}
+              {igAnalysisLoading ? 'Creating task…' : 'Create task'}
             </button>
             <span className="muted">
-              Calls <code>/api/v1/instagram/analysis</code>
+              Returns a <code>taskId</code> you can poll.
             </span>
           </div>
           {igAnalysisError ? (
@@ -333,9 +348,39 @@ export function App() {
               {igAnalysisError}
             </p>
           ) : null}
-          {igAnalysisResult ? (
+          {igAnalysisTaskId ? (
             <div style={{ marginTop: 12 }}>
-              <pre>{JSON.stringify(igAnalysisResult, null, 2)}</pre>
+              <label>Task ID</label>
+              <input
+                value={igAnalysisTaskId}
+                readOnly
+                style={{ background: '#f1f5f9', cursor: 'not-allowed' }}
+              />
+              <div className="row" style={{ marginTop: 12 }}>
+                <button
+                  className="secondary"
+                  onClick={() => void fetchIgAnalysisTask()}
+                  disabled={igAnalysisLoading}
+                >
+                  {igAnalysisLoading ? 'Loading…' : 'Fetch status'}
+                </button>
+              </div>
+              {igAnalysisTaskStatus ? (
+                <div style={{ marginTop: 12 }}>
+                  <pre>
+                    {JSON.stringify(
+                      {
+                        ...igAnalysisTaskStatus,
+                        result: igAnalysisTaskStatus.result
+                          ? JSON.parse(String(igAnalysisTaskStatus.result))
+                          : null,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
