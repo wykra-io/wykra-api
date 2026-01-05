@@ -19,6 +19,8 @@ type MeResponse = {
   githubAvatarUrl: string | null;
 };
 
+type InstagramAnalysisResponse = Record<string, unknown>;
+
 export function App() {
   const apiBaseUrl: string = useMemo(() => getApiBaseUrl(), []);
 
@@ -37,6 +39,12 @@ export function App() {
   );
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const [igProfile, setIgProfile] = useState('username');
+  const [igAnalysisLoading, setIgAnalysisLoading] = useState(false);
+  const [igAnalysisError, setIgAnalysisError] = useState<string | null>(null);
+  const [igAnalysisResult, setIgAnalysisResult] =
+    useState<InstagramAnalysisResponse | null>(null);
 
   useEffect(() => {
     // OAuth callback redirects to `returnTo#token=...`
@@ -132,6 +140,25 @@ export function App() {
       setCreateError(e instanceof Error ? e.message : String(e));
     } finally {
       setCreateLoading(false);
+    }
+  }
+
+  async function runInstagramProfileAnalysis() {
+    setIgAnalysisError(null);
+    setIgAnalysisResult(null);
+    setIgAnalysisLoading(true);
+    try {
+      const profile = igProfile.trim();
+      if (!profile) throw new Error('Profile is required');
+      const pathname = `/api/v1/instagram/analysis?profile=${encodeURIComponent(
+        String(profile),
+      )}`;
+      const resp = await apiGet<InstagramAnalysisResponse>(pathname);
+      setIgAnalysisResult(resp);
+    } catch (e) {
+      setIgAnalysisError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIgAnalysisLoading(false);
     }
   }
 
@@ -275,6 +302,40 @@ export function App() {
           {taskStatus ? (
             <div style={{ marginTop: 12 }}>
               <pre>{JSON.stringify(taskStatus, null, 2)}</pre>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="card">
+          <h2 style={{ marginTop: 0 }}>Instagram Profile Analysis</h2>
+          <label>Profile username</label>
+          <input
+            value={igProfile}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              setIgProfile(e.target.value);
+            }}
+            placeholder="e.g. username"
+          />
+          <div className="row" style={{ marginTop: 12 }}>
+            <button
+              className="secondary"
+              onClick={() => void runInstagramProfileAnalysis()}
+              disabled={igAnalysisLoading || !igProfile.trim()}
+            >
+              {igAnalysisLoading ? 'Analyzing…' : 'Analyze'}
+            </button>
+            <span className="muted">
+              Calls <code>/api/v1/instagram/analysis</code>
+            </span>
+          </div>
+          {igAnalysisError ? (
+            <p className="muted" style={{ color: '#b91c1c' }}>
+              {igAnalysisError}
+            </p>
+          ) : null}
+          {igAnalysisResult ? (
+            <div style={{ marginTop: 12 }}>
+              <pre>{JSON.stringify(igAnalysisResult, null, 2)}</pre>
             </div>
           ) : null}
         </div>
