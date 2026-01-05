@@ -8,6 +8,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AppConfigModule, DbConfigModule, DbConfigService } from '@libs/config';
 import {
+  ChatMessage,
+  ChatTask,
   InstagramSearchProfile,
   Task,
   TikTokSearchProfile,
@@ -18,6 +20,7 @@ import { SentryClientModule } from '@libs/sentry';
 import { AppController } from './app.controller';
 import { ApiTokenGuard, ApiTokenThrottlerGuard, AuthModule } from '../auth';
 import { BrightdataModule } from '../brightdata';
+import { ChatModule } from '../chat';
 import { InstagramModule } from '../instagram';
 import { TikTokModule } from '../tiktok';
 import { MetricsModule, MetricsInterceptor } from '../metrics';
@@ -30,6 +33,7 @@ import { TasksModule } from '../tasks';
     AuthModule,
     BrightdataModule,
     CacheModule.register(),
+    ChatModule,
     DbConfigModule,
     EventEmitterModule.forRoot(),
     InstagramModule,
@@ -57,7 +61,14 @@ import { TasksModule } from '../tasks';
           database: config.database,
           synchronize: config.synchronize,
           logging: config.logging,
-          entities: [Task, InstagramSearchProfile, TikTokSearchProfile, User],
+          entities: [
+            ChatMessage,
+            ChatTask,
+            Task,
+            InstagramSearchProfile,
+            TikTokSearchProfile,
+            User,
+          ],
           ssl: config.ssl,
           retryAttempts: 10,
           retryDelay: 3000,

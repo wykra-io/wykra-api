@@ -242,4 +242,307 @@ pre {
   font-size: 13px;
 }
 
+/* Chat UI Styles */
+.chatContainer {
+  display: flex;
+  flex-direction: column;
+  height: 450px;
+  max-height: calc(100vh - 200px);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: white;
+}
+
+.chatMessages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f8fafc;
+}
+
+.chatEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+.chatMessage {
+  display: flex;
+  max-width: 80%;
+  animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chatMessageUser {
+  align-self: flex-end;
+  margin-left: auto;
+}
+
+.chatMessageAssistant {
+  align-self: flex-start;
+}
+
+.chatMessageContent {
+  padding: 12px 16px;
+  border-radius: 12px;
+  word-wrap: break-word;
+  line-height: 1.5;
+}
+
+.chatMessageUser .chatMessageContent {
+  background: #0f172a;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.chatMessageAssistant .chatMessageContent {
+  background: white;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  border-bottom-left-radius: 4px;
+}
+
+.chatEndpointBadge {
+  margin-top: 8px;
+  padding: 4px 8px;
+  background: rgba(15, 23, 42, 0.1);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  display: inline-block;
+}
+
+.chatMessageUser .chatEndpointBadge {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.chatLoading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  font-style: italic;
+}
+
+.chatLoading::after {
+  content: '...';
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0%,
+  20% {
+    content: '.';
+  }
+  40% {
+    content: '..';
+  }
+  60%,
+  100% {
+    content: '...';
+  }
+}
+
+.chatTaskSpinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: chatTaskSpinner 0.6s linear infinite;
+}
+
+@keyframes chatTaskSpinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.instagramProfileCard {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.instagramProfileHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+  min-height: 64px;
+}
+
+.instagramProfileImage {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #e2e8f0;
+  display: block;
+  flex-shrink: 0;
+}
+
+.instagramProfileImagePlaceholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid #e2e8f0;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+
+.instagramProfileInfo {
+  flex: 1;
+}
+
+.instagramProfileName {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.instagramProfileLink {
+  color: #0f172a;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.instagramProfileLink:hover {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.instagramVerified {
+  color: #3b82f6;
+  font-size: 16px;
+}
+
+.instagramProfileStats {
+  display: flex;
+  gap: 16px;
+  font-size: 14px;
+  color: #64748b;
+}
+
+.instagramProfileAnalysis {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.instagramAnalysisSection {
+  margin-bottom: 8px;
+}
+
+.instagramAnalysisSection h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 8px 0;
+}
+
+.instagramAnalysisSection p {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.instagramAnalysisRow {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  padding: 6px 0;
+}
+
+.instagramAnalysisLabel {
+  font-weight: 600;
+  color: #0f172a;
+  min-width: 120px;
+}
+
+.instagramAnalysisRow > span:last-child {
+  color: #475569;
+}
+
+.chatInputForm {
+  border-top: 1px solid #e2e8f0;
+  padding: 12px;
+  background: white;
+}
+
+.chatInputWrapper {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.chatInput {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.chatInput:focus {
+  outline: none;
+  border-color: #0f172a;
+}
+
+.chatSendButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 10px;
+  background: #0f172a;
+  color: white;
+  border: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.chatSendButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.chatSendButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 

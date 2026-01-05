@@ -12,6 +12,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { Public } from './decorators/public.decorator';
+import { SkipThrottle } from './decorators/skip-throttle.decorator';
 import { AuthService } from './auth.service';
 import type { AuthTokenResponse } from './interfaces/auth-token-response.interface';
 import { GITHUB_AUTH_CACHE_TTL_SECONDS } from './constants';
@@ -51,6 +52,7 @@ export class AuthController {
     return this.authService.githubAuthToApiToken(req);
   }
 
+  @SkipThrottle()
   @Get('me')
   public me(@Req() req: Request & { user?: User }): {
     githubLogin: string;

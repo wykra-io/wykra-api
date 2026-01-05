@@ -1,11 +1,6 @@
-import { Controller, Get, Post, Query, Body } from '@nestjs/common';
+import { Controller, Post, Body } from '@nestjs/common';
 
-import {
-  InstagramAnalysisDTO,
-  InstagramProfileDTO,
-  SearchPostDto,
-} from './dto';
-import { InstagramAnalysisData } from './interfaces';
+import { InstagramProfileDTO, SearchPostDto } from './dto';
 import { InstagramService } from './instagram.service';
 
 @Controller('instagram')
@@ -13,24 +8,14 @@ export class InstagramController {
   constructor(private readonly instagramService: InstagramService) {}
 
   /**
-   * Analyzes an Instagram profile using third-party API and processes results with LLM.
-   *
-   * @param {InstagramAnalysisDTO} query - Query parameters containing the Instagram profile to analyze.
-   *
-   * @returns {Promise<InstagramAnalysisData>} Analysis results processed by LLM.
-   */
-  @Get('analysis')
-  public async analyzeProfile(
-    @Query() query: InstagramAnalysisDTO,
-  ): Promise<InstagramAnalysisData> {
-    return this.instagramService.analyzeProfile(query.profile);
-  }
-
-  /**
    * Creates a new Instagram profile analysis task (queued).
+   *
+   * @param {InstagramProfileDTO} dto - Profile data containing the Instagram profile to analyze.
+   *
+   * @returns {Promise<{ taskId: string }>} The created task ID.
    */
-  @Post('profile')
-  public async profile(
+  @Post('analysis')
+  public async analyzeProfile(
     @Body() dto: InstagramProfileDTO,
   ): Promise<{ taskId: string }> {
     const taskId = await this.instagramService.profile(dto.profile);

@@ -1,23 +1,257 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 
 import { apiGet, apiPost, getApiBaseUrl, setApiToken } from './api';
-
-type TaskStatusResponse = {
-  taskId: string;
-  status: string;
-  result?: string;
-  error?: string;
-  startedAt?: string;
-  completedAt?: string;
-  instagramProfiles?: unknown[];
-  tiktokProfiles?: unknown[];
-};
 
 type MeResponse = {
   githubLogin: string;
   githubAvatarUrl: string | null;
 };
+
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  detectedEndpoint?: string;
+};
+
+type InstagramProfileAnalysis = {
+  profile: string;
+  data: {
+    profile_name?: string;
+    full_name?: string;
+    profile_image_link?: string;
+    profile_url?: string;
+    followers?: number;
+    posts_count?: number;
+    avg_engagement?: number;
+    is_verified?: boolean;
+    is_private?: boolean;
+  };
+  analysis: {
+    summary?: string;
+    qualityScore?: number;
+    topic?: string;
+    niche?: string;
+    engagementStrength?: string;
+    contentAuthenticity?: string;
+    followerAuthenticity?: string;
+  };
+};
+
+function InstagramProfileCard({ data }: { data: InstagramProfileAnalysis }) {
+  const profileName =
+    data.data.full_name || data.data.profile_name || data.profile;
+  const profileImage = data.data.profile_image_link;
+  const followers = data.data.followers?.toLocaleString();
+  const posts = data.data.posts_count?.toLocaleString();
+  const engagement = data.data.avg_engagement
+    ? `${(data.data.avg_engagement * 100).toFixed(2)}%`
+    : null;
+
+  const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+
+  // Reset states when image URL changes
+  useEffect(() => {
+    setImageError(false);
+    setImageLoaded(false);
+  }, [profileImage]);
+
+  // Create proxied image URL to bypass CORS
+  const proxiedImageUrl = useMemo(() => {
+    if (!profileImage) return null;
+    try {
+      const baseUrl = getApiBaseUrl();
+      const encodedUrl = encodeURIComponent(profileImage);
+      return `${baseUrl}/api/v1/proxy-image?url=${encodedUrl}`;
+    } catch {
+      return profileImage; // Fallback to original URL if encoding fails
+    }
+  }, [profileImage]);
+
+  // Construct Instagram profile URL
+  const profileUrl = useMemo(() => {
+    if (data.data.profile_url) {
+      return data.data.profile_url;
+    }
+    // Fallback: construct URL from profile name
+    const username = data.data.profile_name || data.profile;
+    if (username) {
+      return `https://www.instagram.com/${username.replace('@', '')}/`;
+    }
+    return null;
+  }, [data.data.profile_url, data.data.profile_name, data.profile]);
+
+  return (
+    <div className="instagramProfileCard">
+      <div className="instagramProfileHeader">
+        {profileImage ? (
+          <>
+            {!imageLoaded && !imageError && (
+              <div className="instagramProfileImagePlaceholder">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M20 21a8 8 0 0 0-16 0"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+            )}
+            {proxiedImageUrl && (
+              <img
+                src={proxiedImageUrl}
+                alt={profileName}
+                className="instagramProfileImage"
+                onLoad={() => {
+                  setImageLoaded(true);
+                  setImageError(false);
+                }}
+                onError={() => {
+                  // Only set error after onLoad hasn't fired
+                  if (!imageLoaded) {
+                    setImageError(true);
+                  }
+                }}
+                style={{
+                  display: imageLoaded && !imageError ? 'block' : 'none',
+                }}
+              />
+            )}
+            {imageError && (
+              <div className="instagramProfileImagePlaceholder">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M20 21a8 8 0 0 0-16 0"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="instagramProfileImagePlaceholder">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M20 21a8 8 0 0 0-16 0"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <path
+                d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+            </svg>
+          </div>
+        )}
+        <div className="instagramProfileInfo">
+          <div className="instagramProfileName">
+            {profileUrl ? (
+              <a
+                href={profileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="instagramProfileLink"
+              >
+                {profileName}
+              </a>
+            ) : (
+              profileName
+            )}
+            {data.data.is_verified && (
+              <span className="instagramVerified" title="Verified">
+                ✓
+              </span>
+            )}
+          </div>
+          <div className="instagramProfileStats">
+            {followers && <span>{followers} followers</span>}
+            {posts && <span>{posts} posts</span>}
+            {engagement && <span>{engagement} engagement</span>}
+          </div>
+        </div>
+      </div>
+      {data.analysis.summary && (
+        <div className="instagramProfileAnalysis">
+          <div className="instagramAnalysisSection">
+            <h4>Summary</h4>
+            <p>{data.analysis.summary}</p>
+          </div>
+          {data.analysis.topic && (
+            <div className="instagramAnalysisRow">
+              <span className="instagramAnalysisLabel">Topic:</span>
+              <span>{data.analysis.topic}</span>
+            </div>
+          )}
+          {data.analysis.niche && (
+            <div className="instagramAnalysisRow">
+              <span className="instagramAnalysisLabel">Niche:</span>
+              <span>{data.analysis.niche}</span>
+            </div>
+          )}
+          {data.analysis.qualityScore !== undefined && (
+            <div className="instagramAnalysisRow">
+              <span className="instagramAnalysisLabel">Quality Score:</span>
+              <span>{data.analysis.qualityScore}/5</span>
+            </div>
+          )}
+          {data.analysis.engagementStrength && (
+            <div className="instagramAnalysisRow">
+              <span className="instagramAnalysisLabel">Engagement:</span>
+              <span>{data.analysis.engagementStrength}</span>
+            </div>
+          )}
+          {data.analysis.contentAuthenticity && (
+            <div className="instagramAnalysisRow">
+              <span className="instagramAnalysisLabel">Content:</span>
+              <span>{data.analysis.contentAuthenticity}</span>
+            </div>
+          )}
+          {data.analysis.followerAuthenticity && (
+            <div className="instagramAnalysisRow">
+              <span className="instagramAnalysisLabel">Followers:</span>
+              <span>{data.analysis.followerAuthenticity}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function App() {
   const apiBaseUrl: string = useMemo(() => getApiBaseUrl(), []);
@@ -27,23 +261,13 @@ export function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
 
-  const [taskId, setTaskId] = useState('');
-  const [taskStatus, setTaskStatus] = useState<TaskStatusResponse | null>(null);
-  const [taskError, setTaskError] = useState<string | null>(null);
-  const [taskLoading, setTaskLoading] = useState(false);
-
-  const [instagramQuery, setInstagramQuery] = useState(
-    'Find up to 10 public Instagram accounts from Portugal who post about cooking and have not more than 50000 followers',
-  );
-  const [createLoading, setCreateLoading] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-
-  const [igProfile, setIgProfile] = useState('username');
-  const [igAnalysisLoading, setIgAnalysisLoading] = useState(false);
-  const [igAnalysisError, setIgAnalysisError] = useState<string | null>(null);
-  const [igAnalysisTaskId, setIgAnalysisTaskId] = useState('');
-  const [igAnalysisTaskStatus, setIgAnalysisTaskStatus] =
-    useState<TaskStatusResponse | null>(null);
+  // Chat state
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [pollingTasks, setPollingTasks] = useState<Set<string>>(new Set());
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const isInitialLoadRef = useRef(true);
 
   useEffect(() => {
     // OAuth callback redirects to `returnTo#token=...`
@@ -52,9 +276,10 @@ export function App() {
       hash.startsWith('#') ? hash.slice(1) : hash,
     );
     const token = params.get('token');
+
+    // If token is in URL, save it to localStorage
     if (token) {
       setApiToken(token);
-      setIsAuthed(true);
       // Clear token from URL
       window.history.replaceState(
         {},
@@ -63,7 +288,7 @@ export function App() {
       );
     }
 
-    // Initial load: check stored token
+    // Check for stored token
     let hasToken = false;
     try {
       hasToken = !!localStorage.getItem('wykraApiToken');
@@ -71,8 +296,7 @@ export function App() {
       hasToken = false;
     }
 
-    if (!token) setIsAuthed(hasToken);
-
+    // Only verify token if we have one (from URL or storage)
     if (token || hasToken) {
       void (async () => {
         try {
@@ -102,20 +326,138 @@ export function App() {
                 githubLogin: userData.githubLogin,
                 githubAvatarUrl: avatarUrl,
               });
+              // Only set authenticated after successful user data fetch
+              setIsAuthed(true);
             } else {
+              // Invalid user data - clear auth
+              setApiToken(null);
+              setIsAuthed(false);
               setMe(null);
             }
           } else {
-            setMe(null);
-          }
-        } catch {
+            // Invalid response format - clear auth
           setApiToken(null);
           setIsAuthed(false);
           setMe(null);
+          }
+        } catch (error) {
+          // Only clear token if it's an authentication error (401)
+          // For other errors (network, etc.), keep the token but don't set as authed
+          const isAuthError =
+            error instanceof Error &&
+            (error.message.includes('401') ||
+              error.message.includes('Unauthorized'));
+
+          if (isAuthError) {
+            // Token is invalid - clear everything
+            setApiToken(null);
+            setIsAuthed(false);
+            setMe(null);
+          } else {
+            // Network or other error - keep token but don't set as authed
+            // User can retry later
+            setIsAuthed(false);
+            setMe(null);
+          }
         }
       })();
+    } else {
+      // No token at all - ensure we're not authed
+      setIsAuthed(false);
+      setMe(null);
     }
   }, []);
+
+  // Load chat history when authenticated
+  const loadChatHistory = useMemo(
+    () => async () => {
+      if (!isAuthed || !me) return;
+      try {
+        const historyResp = await apiGet<
+          { data: Array<ChatMessage> } | Array<ChatMessage>
+        >(`/api/v1/chat/history`);
+        const historyData = Array.isArray(historyResp)
+          ? historyResp
+          : historyResp.data || [];
+        const loadedMessages = historyData.map((msg) => ({
+          id: String(msg.id),
+          role: msg.role,
+          content: msg.content,
+          detectedEndpoint: msg.detectedEndpoint || undefined,
+        }));
+        // Filter out "Processing your request..." messages
+        const filteredMessages = loadedMessages.filter(
+          (msg) => msg.content !== 'Processing your request...',
+        );
+        setMessages(filteredMessages);
+
+        // Scroll to bottom on initial load
+        if (isInitialLoadRef.current && filteredMessages.length > 0) {
+          isInitialLoadRef.current = false;
+          // Use setTimeout to ensure DOM is updated
+          setTimeout(() => {
+            chatEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          }, 100);
+        }
+
+        // Check if we should keep loading (if there are active tasks being polled)
+        const hasResults = filteredMessages.some(
+          (msg) =>
+            msg.content.startsWith('[INSTAGRAM_PROFILE_ANALYSIS]') ||
+            (msg.detectedEndpoint && msg.content.length > 100),
+        );
+
+        if (hasResults || pollingTasks.size === 0) {
+          setChatLoading(false);
+        }
+
+        // Update polling tasks - stop polling if results arrived
+        setPollingTasks((prev: Set<string>) => {
+          const next = new Set<string>(prev);
+          for (const msg of filteredMessages) {
+            if (
+              msg.content.startsWith('[INSTAGRAM_PROFILE_ANALYSIS]') ||
+              (msg.detectedEndpoint && msg.content.length > 100)
+            ) {
+              // Result arrived, stop polling
+              next.delete(msg.id);
+            }
+          }
+          return next;
+        });
+      } catch (error) {
+        // If history fails, just start with empty messages
+        console.warn(
+          `Failed to load chat history: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+    [isAuthed, me],
+  );
+
+  useEffect(() => {
+    if (isAuthed && me) {
+      // Reset initial load flag when auth state changes
+      isInitialLoadRef.current = true;
+      void loadChatHistory();
+    } else {
+      // Clear messages when not authenticated
+      setMessages([]);
+      setPollingTasks(new Set());
+      isInitialLoadRef.current = true;
+    }
+  }, [isAuthed, me, loadChatHistory]);
+
+  // Poll for chat updates when there are active tasks
+  useEffect(() => {
+    if (!isAuthed || !me || pollingTasks.size === 0) return;
+
+    const pollInterval = setInterval(() => {
+      void loadChatHistory();
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [isAuthed, me, pollingTasks.size, loadChatHistory]);
 
   function startGithubSignIn() {
     const returnTo = `${window.location.origin}${window.location.pathname}${window.location.search}`;
@@ -137,74 +479,111 @@ export function App() {
     }
   }
 
-  async function fetchTask() {
-    setTaskError(null);
-    setTaskLoading(true);
+  async function sendChatMessage(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const query = chatInput.trim();
+    if (!query || chatLoading || !isAuthed) return;
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: query,
+    };
+
+    setMessages((prev: ChatMessage[]) => [...prev, userMessage]);
+    setChatInput('');
+    setChatLoading(true);
+    // Scroll to bottom when user sends a message
+    setTimeout(() => scrollToBottom(true), 100);
+
     try {
-      const data = await apiGet<TaskStatusResponse>(`/api/v1/tasks/${taskId}`);
-      setTaskStatus(data);
-    } catch (e) {
-      setTaskStatus(null);
-      setTaskError(e instanceof Error ? e.message : String(e));
+      const response = await apiPost<{
+        data?: { response: string; detectedEndpoint?: string };
+        response?: string;
+        detectedEndpoint?: string;
+      }>(`/api/v1/chat`, { query });
+
+      const chatData =
+        'data' in response && response.data ? response.data : response;
+
+      // If endpoint detected, keep loading state to show thinking loader
+      // Don't add any message - result will come from task completion
+      if (chatData.detectedEndpoint) {
+        // Keep loading state - will be stopped when result arrives via polling
+        // Start polling for results
+        const tempId = `temp-${Date.now()}`;
+        setPollingTasks((prev: Set<string>) => {
+          const next = new Set<string>(prev);
+          next.add(tempId);
+          return next;
+        });
+
+        // Stop polling after 5 minutes
+        setTimeout(
+          () => {
+            setPollingTasks((prev: Set<string>) => {
+              const next = new Set<string>(prev);
+              next.delete(tempId);
+              return next;
+            });
+            setChatLoading(false);
+          },
+          5 * 60 * 1000,
+        );
+      } else {
+        // No endpoint detected - show normal response
+        const assistantMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: chatData.response || '',
+          detectedEndpoint: chatData.detectedEndpoint,
+        };
+        setMessages((prev: ChatMessage[]) => [...prev, assistantMessage]);
+        setChatLoading(false);
+      }
+
+      // Reload history to get any new messages from backend (like task results)
+      setTimeout(() => {
+        void loadChatHistory();
+      }, 2000);
+    } catch (error) {
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Failed to send message'}`,
+      };
+      setMessages((prev: ChatMessage[]) => [...prev, errorMessage]);
     } finally {
-      setTaskLoading(false);
+      setChatLoading(false);
     }
   }
 
-  async function createInstagramSearch() {
-    setCreateError(null);
-    setCreateLoading(true);
-    try {
-      const resp = await apiPost<{ taskId: string }>(
-        `/api/v1/instagram/search`,
-        {
-          query: instagramQuery,
-        },
-      );
-      setTaskId(resp.taskId);
-      setTaskStatus(null);
-    } catch (e) {
-      setCreateError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCreateLoading(false);
-    }
-  }
+  // Auto-scroll to bottom only when user sends a message or is already at bottom
+  const scrollToBottom = (force = false) => {
+    const messagesContainer = chatEndRef.current?.parentElement;
+    if (!messagesContainer) return;
 
-  async function runInstagramProfileAnalysis() {
-    setIgAnalysisError(null);
-    setIgAnalysisTaskStatus(null);
-    setIgAnalysisLoading(true);
-    try {
-      const profile = igProfile.trim();
-      if (!profile) throw new Error('Profile is required');
-      const resp = await apiPost<{ taskId: string }>(
-        `/api/v1/instagram/profile`,
-        { profile },
-      );
-      setIgAnalysisTaskId(resp.taskId);
-      setIgAnalysisTaskStatus(null);
-    } catch (e) {
-      setIgAnalysisError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setIgAnalysisLoading(false);
-    }
-  }
+    const isNearBottom =
+      messagesContainer.scrollHeight - messagesContainer.scrollTop <=
+      messagesContainer.clientHeight + 100; // 100px threshold
 
-  async function fetchIgAnalysisTask() {
-    if (!igAnalysisTaskId.trim()) return;
-    setIgAnalysisError(null);
-    setIgAnalysisLoading(true);
-    try {
-      const data = await apiGet<TaskStatusResponse>(
-        `/api/v1/tasks/${igAnalysisTaskId}`,
-      );
-      setIgAnalysisTaskStatus(data);
-    } catch (e) {
-      setIgAnalysisError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setIgAnalysisLoading(false);
+    if (force || isNearBottom) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }
+  };
+
+  // Track last message count to detect new messages
+  const lastMessageCountRef = useRef(0);
+
+  // Only scroll when new messages are added and user is at bottom or it's a user message
+  useEffect(() => {
+    if (messages.length > lastMessageCountRef.current) {
+      const isNewUserMessage =
+        messages.length > 0 && messages[messages.length - 1]?.role === 'user';
+      scrollToBottom(isNewUserMessage);
+      lastMessageCountRef.current = messages.length;
+    }
+  }, [messages]);
 
   return (
     <div className="container">
@@ -289,132 +668,101 @@ export function App() {
           )}
         </div>
       </div>
-      <p className="muted" style={{ marginTop: 8 }}>
-        API base: <code>{apiBaseUrl}</code>
-      </p>
 
-      <div className="grid" style={{ marginTop: 16 }}>
-        <div className="card">
-          <h2 style={{ marginTop: 0 }}>Create Instagram Search Task</h2>
-          <label>Query</label>
-          <textarea
-            value={instagramQuery}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
-              setInstagramQuery(e.target.value);
-            }}
-          />
-          <div className="row" style={{ marginTop: 12 }}>
-            <button
-              onClick={() => void createInstagramSearch()}
-              disabled={createLoading}
-            >
-              {createLoading ? 'Creating…' : 'Create task'}
-            </button>
-            <span className="muted">
-              Returns a <code>taskId</code> you can poll.
-            </span>
+      {isAuthed ? (
+        <div className="card" style={{ marginTop: 24 }}>
+          <div className="chatContainer">
+            <div className="chatMessages">
+              {messages.length === 0 ? (
+                <div className="chatEmpty">
+                  <p className="muted">
+                    Start a conversation! Ask me about Instagram or TikTok
+                    profiles.
+                  </p>
+                </div>
+              ) : (
+                messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`chatMessage chatMessage${message.role === 'user' ? 'User' : 'Assistant'}`}
+                  >
+                    <div className="chatMessageContent">
+                      {message.content.startsWith(
+                        '[INSTAGRAM_PROFILE_ANALYSIS]',
+                      )
+                        ? (() => {
+                            try {
+                              const jsonStr = String(
+                                message.content.replace(
+                                  '[INSTAGRAM_PROFILE_ANALYSIS]\n',
+                                  '',
+                                ),
+                              );
+                              const data = JSON.parse(
+                                jsonStr,
+                              ) as InstagramProfileAnalysis;
+                              return <InstagramProfileCard data={data} />;
+                            } catch {
+                              return <>{message.content}</>;
+                            }
+                          })()
+                        : message.content}
+                    </div>
           </div>
-          {createError ? (
-            <p className="muted" style={{ color: '#b91c1c' }}>
-              {createError}
-            </p>
-          ) : null}
+                ))
+              )}
+              {chatLoading && (
+                <div className="chatMessage chatMessageAssistant">
+                  <div className="chatMessageContent">
+                    <div className="chatLoading">Thinking</div>
         </div>
-
-        <div className="card">
-          <h2 style={{ marginTop: 0 }}>Check Task Status</h2>
-          <label>Task ID</label>
-          <input
-            value={taskId}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-              setTaskId(e.target.value);
-            }}
-            placeholder="paste taskId here"
-          />
-          <div className="row" style={{ marginTop: 12 }}>
-            <button
-              className="secondary"
-              onClick={() => void fetchTask()}
-              disabled={!taskId.trim() || taskLoading}
-            >
-              {taskLoading ? 'Loading…' : 'Fetch status'}
-            </button>
           </div>
-          {taskError ? (
-            <p className="muted" style={{ color: '#b91c1c' }}>
-              {taskError}
-            </p>
-          ) : null}
-          {taskStatus ? (
-            <div style={{ marginTop: 12 }}>
-              <pre>{JSON.stringify(taskStatus, null, 2)}</pre>
+              )}
+              <div ref={chatEndRef} />
             </div>
-          ) : null}
-        </div>
-
-        <div className="card">
-          <h2 style={{ marginTop: 0 }}>Instagram Profile Analysis</h2>
-          <label>Profile username</label>
-          <input
-            value={igProfile}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-              setIgProfile(e.target.value);
-            }}
-            placeholder="e.g. username"
-          />
-          <div className="row" style={{ marginTop: 12 }}>
-            <button
-              onClick={() => void runInstagramProfileAnalysis()}
-              disabled={igAnalysisLoading || !igProfile.trim()}
+            <form
+              onSubmit={(e) => {
+                void sendChatMessage(e);
+              }}
+              className="chatInputForm"
             >
-              {igAnalysisLoading ? 'Creating task…' : 'Create task'}
-            </button>
-            <span className="muted">
-              Returns a <code>taskId</code> you can poll.
-            </span>
-          </div>
-          {igAnalysisError ? (
-            <p className="muted" style={{ color: '#b91c1c' }}>
-              {igAnalysisError}
-            </p>
-          ) : null}
-          {igAnalysisTaskId ? (
-            <div style={{ marginTop: 12 }}>
-              <label>Task ID</label>
+              <div className="chatInputWrapper">
               <input
-                value={igAnalysisTaskId}
-                readOnly
-                style={{ background: '#f1f5f9', cursor: 'not-allowed' }}
-              />
-              <div className="row" style={{ marginTop: 12 }}>
+                  type="text"
+                  value={chatInput}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    setChatInput(e.target.value);
+                  }}
+                  placeholder="Ask about Instagram or TikTok profiles..."
+                  disabled={chatLoading}
+                  className="chatInput"
+                />
                 <button
-                  className="secondary"
-                  onClick={() => void fetchIgAnalysisTask()}
-                  disabled={igAnalysisLoading}
+                  type="submit"
+                  disabled={!chatInput.trim() || chatLoading}
+                  className="chatSendButton"
                 >
-                  {igAnalysisLoading ? 'Loading…' : 'Fetch status'}
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </button>
               </div>
-              {igAnalysisTaskStatus ? (
-                <div style={{ marginTop: 12 }}>
-                  <pre>
-                    {JSON.stringify(
-                      {
-                        ...igAnalysisTaskStatus,
-                        result: igAnalysisTaskStatus.result
-                          ? JSON.parse(String(igAnalysisTaskStatus.result))
-                          : null,
-                      },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </div>
-              ) : null}
+            </form>
             </div>
-          ) : null}
         </div>
-      </div>
+      ) : null}
 
       {authModalOpen ? (
         <div
