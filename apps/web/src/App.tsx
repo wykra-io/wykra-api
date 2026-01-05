@@ -54,7 +54,6 @@ export function App() {
     const token = params.get('token');
     if (token) {
       setApiToken(token);
-      setIsAuthed(true);
       // Clear token from URL
       window.history.replaceState(
         {},
@@ -71,17 +70,18 @@ export function App() {
       hasToken = false;
     }
 
-    if (!token) setIsAuthed(hasToken);
-
     // If token exists (from hash or storage), fetch current user
     if (token || hasToken) {
       void (async () => {
         try {
           const meResp = await apiGet<MeResponse>(`/api/v1/auth/me`);
-          if (meResp && typeof meResp === 'object') {
+          if (meResp && typeof meResp === 'object' && meResp.githubLogin) {
             setMe(meResp);
+            setIsAuthed(true);
           } else {
-            // Invalid response format
+            // Invalid response format or missing data
+            setApiToken(null);
+            setIsAuthed(false);
             setMe(null);
           }
         } catch {
@@ -91,6 +91,9 @@ export function App() {
           setMe(null);
         }
       })();
+    } else {
+      setIsAuthed(false);
+      setMe(null);
     }
   }, []);
 
