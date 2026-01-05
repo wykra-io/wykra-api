@@ -78,7 +78,12 @@ export function App() {
       void (async () => {
         try {
           const meResp = await apiGet<MeResponse>(`/api/v1/auth/me`);
-          setMe(meResp);
+          if (meResp && typeof meResp === 'object') {
+            setMe(meResp);
+          } else {
+            // Invalid response format
+            setMe(null);
+          }
         } catch {
           // Token invalid/expired → clear local auth state
           setApiToken(null);
@@ -208,7 +213,7 @@ export function App() {
                   <img
                     className="avatar"
                     src={me.githubAvatarUrl}
-                    alt={me.githubLogin}
+                    alt={me.githubLogin || 'User'}
                     referrerPolicy="no-referrer"
                   />
                 ) : (
@@ -240,7 +245,9 @@ export function App() {
                 <div className="userMenu" role="menu">
                   <div className="userMenuHeader">
                     <div className="userMenuName">
-                      {me?.githubLogin || 'GitHub user'}
+                      {me?.githubLogin && me.githubLogin.trim()
+                        ? me.githubLogin
+                        : 'User'}
                     </div>
                     <div className="muted" style={{ fontSize: 12 }}>
                       Signed in
