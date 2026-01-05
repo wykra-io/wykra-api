@@ -54,6 +54,7 @@ export function App() {
     const token = params.get('token');
     if (token) {
       setApiToken(token);
+      setIsAuthed(true);
       // Clear token from URL
       window.history.replaceState(
         {},
@@ -70,30 +71,49 @@ export function App() {
       hasToken = false;
     }
 
-    // If token exists (from hash or storage), fetch current user
+    if (!token) setIsAuthed(hasToken);
+
     if (token || hasToken) {
       void (async () => {
         try {
-          const meResp = await apiGet<MeResponse>(`/api/v1/auth/me`);
-          if (meResp && typeof meResp === 'object' && meResp.githubLogin) {
-            setMe(meResp);
-            setIsAuthed(true);
+          const meResp = await apiGet<{ data: MeResponse } | MeResponse>(
+            `/api/v1/auth/me`,
+          );
+          if (meResp && typeof meResp === 'object') {
+            let userData: unknown;
+            if ('data' in meResp && meResp.data) {
+              userData = meResp.data;
+            } else {
+              userData = meResp;
+            }
+            if (
+              userData &&
+              typeof userData === 'object' &&
+              'githubLogin' in userData &&
+              typeof userData.githubLogin === 'string'
+            ) {
+              const avatarUrl =
+                'githubAvatarUrl' in userData &&
+                (userData.githubAvatarUrl === null ||
+                  typeof userData.githubAvatarUrl === 'string')
+                  ? userData.githubAvatarUrl
+                  : null;
+              setMe({
+                githubLogin: userData.githubLogin,
+                githubAvatarUrl: avatarUrl,
+              });
+            } else {
+              setMe(null);
+            }
           } else {
-            // Invalid response format or missing data
-            setApiToken(null);
-            setIsAuthed(false);
             setMe(null);
           }
         } catch {
-          // Token invalid/expired → clear local auth state
           setApiToken(null);
           setIsAuthed(false);
           setMe(null);
         }
       })();
-    } else {
-      setIsAuthed(false);
-      setMe(null);
     }
   }, []);
 
