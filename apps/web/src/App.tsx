@@ -494,7 +494,7 @@ export function App() {
     setChatInput('');
     setChatLoading(true);
     // Scroll to bottom when user sends a message
-    setTimeout(() => scrollToBottom(true), 100);
+    scrollToBottom();
 
     try {
       const response = await apiPost<{
@@ -558,29 +558,21 @@ export function App() {
     }
   }
 
-  // Auto-scroll to bottom only when user sends a message or is already at bottom
-  const scrollToBottom = (force = false) => {
-    const messagesContainer = chatEndRef.current?.parentElement;
-    if (!messagesContainer) return;
-
-    const isNearBottom =
-      messagesContainer.scrollHeight - messagesContainer.scrollTop <=
-      messagesContainer.clientHeight + 100; // 100px threshold
-
-    if (force || isNearBottom) {
+  // Auto-scroll to bottom when new messages are added
+  const scrollToBottom = () => {
+    // Use setTimeout to ensure DOM is updated
+    setTimeout(() => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    }, 100);
   };
 
   // Track last message count to detect new messages
   const lastMessageCountRef = useRef(0);
 
-  // Only scroll when new messages are added and user is at bottom or it's a user message
+  // Scroll down when new messages are added
   useEffect(() => {
     if (messages.length > lastMessageCountRef.current) {
-      const isNewUserMessage =
-        messages.length > 0 && messages[messages.length - 1]?.role === 'user';
-      scrollToBottom(isNewUserMessage);
+      scrollToBottom();
       lastMessageCountRef.current = messages.length;
     }
   }, [messages]);
@@ -669,8 +661,37 @@ export function App() {
         </div>
       </div>
 
-      {isAuthed ? (
-        <div className="card" style={{ marginTop: 24 }}>
+      {!isAuthed ? (
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: '48px 16px',
+          }}
+        >
+          <div>
+            <h2 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>
+              Welcome to Wykra
+            </h2>
+            <p className="muted" style={{ margin: '0 0 24px 0', fontSize: 16 }}>
+              Sign in to start
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="card"
+          style={{
+            marginTop: 24,
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}
+        >
           <div className="chatContainer">
             <div className="chatMessages">
               {messages.length === 0 ? (
@@ -711,13 +732,6 @@ export function App() {
           </div>
                 ))
               )}
-              {chatLoading && (
-                <div className="chatMessage chatMessageAssistant">
-                  <div className="chatMessageContent">
-                    <div className="chatLoading">Thinking</div>
-        </div>
-          </div>
-              )}
               <div ref={chatEndRef} />
             </div>
             <form
@@ -727,7 +741,7 @@ export function App() {
               className="chatInputForm"
             >
               <div className="chatInputWrapper">
-              <input
+                <input
                   type="text"
                   value={chatInput}
                   onChange={(e: ChangeEvent<HTMLInputElement>) => {
@@ -740,29 +754,33 @@ export function App() {
                 <button
                   type="submit"
                   disabled={!chatInput.trim() || chatLoading}
-                  className="chatSendButton"
+                  className={`chatSendButton ${chatLoading ? 'chatSendButtonLoading' : ''}`}
                 >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  {chatLoading ? (
+                    <div className="chatSendButtonSpinner" />
+                  ) : (
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
                 </button>
               </div>
             </form>
-            </div>
+          </div>
         </div>
-      ) : null}
+      )}
 
       {authModalOpen ? (
         <div
@@ -800,9 +818,6 @@ export function App() {
                 </svg>
               </button>
             </div>
-            <p className="muted" style={{ marginTop: 8 }}>
-              Sign in to create tasks and view results.
-            </p>
             <div style={{ marginTop: 16 }}>
               <button
                 className="githubButton"
