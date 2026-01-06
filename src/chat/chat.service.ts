@@ -22,6 +22,7 @@ export class ChatService {
   private readonly logger = new Logger(ChatService.name);
   private readonly defaultModel = 'anthropic/claude-3.5-sonnet';
   private readonly llmClient: ChatOpenAI | null;
+  private readonly processingMessageContent = 'Processing your request...';
 
   constructor(
     private readonly openrouterConfig: OpenrouterConfigService,
@@ -67,17 +68,15 @@ export class ChatService {
    * Extracts detected endpoint from LLM response
    */
   private extractDetectedEndpoint(content: string): string | undefined {
-    // Look for full endpoint paths in the format [DETECTED_ENDPOINT: /instagram/search] etc.
     const fullPathMatch = content.match(
-      /\[DETECTED_ENDPOINT:\s*(\/(?:instagram|tiktok)\/(?:search|profile|analysis))\s*\]/i,
+      /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))\s*\]/i,
     );
     if (fullPathMatch) {
       return fullPathMatch[1].toLowerCase();
     }
 
-    // Look for JSON structure with full path
     const jsonMatch = content.match(
-      /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram|tiktok)\/(?:search|profile|analysis))"[\s\S]*\}/,
+      /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))"[\s\S]*\}/,
     );
     if (jsonMatch) {
       try {
@@ -86,7 +85,7 @@ export class ChatService {
         };
         if (
           json.detectedEndpoint &&
-          /^\/(?:instagram|tiktok)\/(?:search|profile|analysis)$/.test(
+          /^\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))$/.test(
             json.detectedEndpoint,
           )
         ) {
@@ -95,7 +94,7 @@ export class ChatService {
       } catch {
         // If JSON parsing fails, try regex extraction
         const endpointMatch = jsonMatch[0].match(
-          /"detectedEndpoint":\s*"(\/(?:instagram|tiktok)\/(?:search|profile|analysis))"/,
+          /"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))"/,
         );
         if (endpointMatch) {
           return endpointMatch[1].toLowerCase();
@@ -103,8 +102,6 @@ export class ChatService {
       }
     }
 
-    // Legacy fallback: look for simple platform name and infer endpoint
-    // If user mentions "search" or "find", use /search, otherwise /profile
     const platformMatch = content.match(
       /\[DETECTED_ENDPOINT:\s*(instagram|tiktok)\]/i,
     );
@@ -209,11 +206,7 @@ If you cannot extract a clear profile username, respond with:
 
       if (endpoint === '/instagram/search' && params.query) {
         taskId = await this.instagramService.search(params.query);
-      } else if (
-        (endpoint === '/instagram/profile' ||
-          endpoint === '/instagram/analysis') &&
-        params.profile
-      ) {
+      } else if (endpoint === '/instagram/analysis' && params.profile) {
         taskId = await this.instagramService.profile(params.profile);
       } else if (endpoint === '/tiktok/search' && params.query) {
         taskId = await this.tiktokService.search(params.query);
@@ -249,7 +242,7 @@ If you cannot extract a clear profile username, respond with:
     result?: unknown;
     error?: string;
   }> {
-    const maxAttempts = 60; // Poll for up to 5 minutes (5s intervals)
+    const maxAttempts = 60;
     let attempts = 0;
 
     while (attempts < maxAttempts) {
@@ -263,18 +256,15 @@ If you cannot extract a clear profile username, respond with:
           let result: unknown = null;
           if (task.result) {
             try {
-              // Parse the JSON string from database
               if (typeof task.result === 'string') {
                 result = JSON.parse(task.result);
               } else {
-                // Already parsed or unexpected type
                 result = task.result;
               }
             } catch (parseError) {
               this.logger.warn(
                 `Failed to parse task result for ${taskId}: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
               );
-              // Return the raw result if parsing fails
               result = task.result;
             }
           }
@@ -285,7 +275,6 @@ If you cannot extract a clear profile username, respond with:
           return { status: 'failed', error: task.error || 'Task failed' };
         }
 
-        // Task is still pending or running, wait and retry
         await new Promise((resolve) => setTimeout(resolve, 5000));
         attempts++;
       } catch (error) {
@@ -311,7 +300,6 @@ If you cannot extract a clear profile username, respond with:
         `Processing chat query: ${dto.query.substring(0, 50)}...`,
       );
 
-      // Prepare system prompt with endpoint detection instruction
       const systemPrompt = `You are a helpful AI assistant for the Wykra API. 
 You help users interact with social media analysis tools for Instagram and TikTok.
 
@@ -344,28 +332,24 @@ Provide clear, concise responses.`;
       const response = await llmClient.invoke(messages);
       const content = response.content as string;
 
-      // Extract detected endpoint from the response
       const detectedEndpoint = this.extractDetectedEndpoint(content);
 
-      // Remove the detection marker from the response content
       const cleanContent = content
         .replace(
-          /\[DETECTED_ENDPOINT:\s*(\/(?:instagram|tiktok)\/(?:search|profile|analysis)|none)\s*\]/gi,
+          /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))|none)\s*\]/gi,
           '',
         )
         .replace(
-          /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram|tiktok)\/(?:search|profile|analysis)|none)"[\s\S]*\}/,
+          /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))|none)"[\s\S]*\}/,
           '',
         )
         .replace(/\[DETECTED_ENDPOINT:\s*(instagram|tiktok|none)\]/gi, '')
         .trim();
 
-      // Log detected endpoint if found
       if (detectedEndpoint && detectedEndpoint !== 'none') {
-        console.log(`Detected endpoint call: ${detectedEndpoint}`);
+        this.logger.log(`Detected endpoint call: ${detectedEndpoint}`);
       }
 
-      // Save user message first
       try {
         await this.chatMessagesRepo.create({
           userId,
@@ -379,45 +363,104 @@ Provide clear, concise responses.`;
         );
       }
 
-      // If endpoint detected, don't save any message - just start task
-      // The result will be saved when task completes
       if (detectedEndpoint && detectedEndpoint !== 'none') {
-        // Extract parameters first
         const params = await this.extractEndpointParameters(
           detectedEndpoint,
           dto.query,
         );
 
-        if (params && !('missing' in params)) {
-          // Parameters found - call endpoint without saving message
-          const taskId = await this.callEndpoint(
-            detectedEndpoint,
-            params,
-            userId,
-            null, // No message ID - result will be saved when task completes
-          );
+        const needsQuery = detectedEndpoint.endsWith('/search');
+        const needsProfile =
+          detectedEndpoint.endsWith('/analysis') ||
+          detectedEndpoint.endsWith('/profile');
 
-          if (taskId) {
-            // Start polling task status in background
-            void this.handleTaskPolling(taskId, userId);
-          }
-        } else {
-          // Missing parameters, ask user
+        if (
+          !params ||
+          (needsQuery && !params.query) ||
+          (needsProfile && !params.profile)
+        ) {
+          const missingField = needsQuery ? 'query' : 'profile';
+          const promptMessage = `I need more information to proceed. Please provide the ${missingField} for this request.`;
           try {
             await this.chatMessagesRepo.create({
               userId,
               role: ChatMessageRole.Assistant,
-              content: `I need more information to proceed. Please provide the ${detectedEndpoint.includes('/search') ? 'query' : 'profile'} for this request.`,
-              detectedEndpoint: detectedEndpoint,
+              content: promptMessage,
+              detectedEndpoint,
             });
           } catch (error) {
             this.logger.warn(
-              `Failed to save assistant message: ${error instanceof Error ? error.message : String(error)}`,
+              `Failed to save assistant prompt message: ${error instanceof Error ? error.message : String(error)}`,
             );
           }
+
+          const duration = (Date.now() - startTime) / 1000;
+          this.logger.log(`Chat response generated in ${duration}s`);
+          return { response: promptMessage, detectedEndpoint };
         }
+
+        let processingMessageId: number | null = null;
+        try {
+          const processingMsg = await this.chatMessagesRepo.create({
+            userId,
+            role: ChatMessageRole.Assistant,
+            content: this.processingMessageContent,
+            detectedEndpoint,
+          });
+          processingMessageId = processingMsg.id;
+        } catch (error) {
+          this.logger.warn(
+            `Failed to save processing message: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+
+        const taskId = await this.callEndpoint(
+          detectedEndpoint,
+          params,
+          userId,
+          processingMessageId,
+        );
+
+        if (!taskId) {
+          const errorMessage =
+            'Failed to start the requested task. Please try again.';
+          if (processingMessageId) {
+            try {
+              await this.chatMessagesRepo.update(processingMessageId, {
+                content: errorMessage,
+                detectedEndpoint: null,
+              });
+            } catch (error) {
+              this.logger.warn(
+                `Failed to update processing message after task start failure: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          } else {
+            try {
+              await this.chatMessagesRepo.create({
+                userId,
+                role: ChatMessageRole.Assistant,
+                content: errorMessage,
+                detectedEndpoint: null,
+              });
+            } catch (error) {
+              this.logger.warn(
+                `Failed to save assistant error message: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          }
+
+          const duration = (Date.now() - startTime) / 1000;
+          this.logger.log(`Chat response generated in ${duration}s`);
+          return { response: errorMessage };
+        }
+
+        void this.handleTaskPolling(taskId, userId);
+
+        const duration = (Date.now() - startTime) / 1000;
+        this.logger.log(`Chat response generated in ${duration}s`);
+        return { response: '', detectedEndpoint, taskId };
       } else {
-        // No endpoint detected - save normal response
         try {
           await this.chatMessagesRepo.create({
             userId,
@@ -435,18 +478,7 @@ Provide clear, concise responses.`;
       const duration = (Date.now() - startTime) / 1000;
       this.logger.log(`Chat response generated in ${duration}s`);
 
-      // Return empty response if endpoint detected (thinking loader will show)
-      // Otherwise return full response
-      const responseContent =
-        detectedEndpoint && detectedEndpoint !== 'none' ? '' : cleanContent;
-
-      return {
-        response: responseContent,
-        detectedEndpoint:
-          detectedEndpoint && detectedEndpoint !== 'none'
-            ? detectedEndpoint
-            : undefined,
-      };
+      return { response: cleanContent };
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
       this.logger.error(
@@ -458,6 +490,49 @@ Provide clear, concise responses.`;
   }
 
   /**
+   * Detects platform from endpoint or result data
+   */
+  private detectPlatform(
+    endpoint?: string | null,
+    result?: unknown,
+  ): 'instagram' | 'tiktok' | null {
+    if (endpoint) {
+      if (endpoint.includes('/instagram/')) {
+        return 'instagram';
+      }
+      if (endpoint.includes('/tiktok/')) {
+        return 'tiktok';
+      }
+    }
+
+    if (result && typeof result === 'object') {
+      const resultObj = result as Record<string, unknown>;
+      const data = resultObj.data as Record<string, unknown> | undefined;
+
+      if (data) {
+        if (
+          'videos_count' in data ||
+          (typeof data.url === 'string' && data.url.includes('tiktok.com')) ||
+          'profile_pic_url' in data ||
+          'account_id' in data
+        ) {
+          return 'tiktok';
+        }
+        if (
+          'posts_count' in data ||
+          (typeof data.profile_url === 'string' &&
+            data.profile_url.includes('instagram.com')) ||
+          'profile_image_link' in data
+        ) {
+          return 'instagram';
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Handles task polling and sends results back to chat
    */
   private async handleTaskPolling(
@@ -465,24 +540,24 @@ Provide clear, concise responses.`;
     userId: number,
   ): Promise<void> {
     try {
-      // Update chat task status to polling
+      const chatTask = await this.chatTasksRepo.findByTaskId(taskId);
+      const endpoint = chatTask?.endpoint;
+      const chatMessageId = chatTask?.chatMessageId ?? null;
+
       await this.chatTasksRepo.update(taskId, { status: 'polling' });
 
-      // Poll task status
       const taskResult = await this.pollTaskStatus(taskId);
 
-      // Update chat task status
       await this.chatTasksRepo.update(taskId, {
         status: taskResult.status,
       });
 
-      // Create result message
       let resultMessage = '';
       if (taskResult.status === 'completed' && taskResult.result) {
-        // Check if this is an Instagram profile analysis
         const result = taskResult.result;
 
-        // Ensure result is an object (not a string)
+        const platform = this.detectPlatform(endpoint, result);
+
         if (typeof result === 'string') {
           try {
             const parsed = JSON.parse(result);
@@ -493,7 +568,11 @@ Provide clear, concise responses.`;
               'data' in parsed &&
               'analysis' in parsed
             ) {
-              resultMessage = `[INSTAGRAM_PROFILE_ANALYSIS]\n${JSON.stringify(parsed)}`;
+              const marker =
+                platform === 'tiktok'
+                  ? '[TIKTOK_PROFILE_ANALYSIS]'
+                  : '[INSTAGRAM_PROFILE_ANALYSIS]';
+              resultMessage = `${marker}\n${JSON.stringify(parsed)}`;
             } else {
               resultMessage = `Task completed! Here are the results:\n\n${result}`;
             }
@@ -507,33 +586,17 @@ Provide clear, concise responses.`;
           'data' in result &&
           'analysis' in result
         ) {
-          // Format as Instagram profile analysis
           const profileData = result as {
             profile: string;
-            data: {
-              profile_name?: string;
-              full_name?: string;
-              profile_image_link?: string;
-              profile_url?: string;
-              followers?: number;
-              posts_count?: number;
-              avg_engagement?: number;
-              is_verified?: boolean;
-              is_private?: boolean;
-            };
-            analysis: {
-              summary?: string;
-              qualityScore?: number;
-              topic?: string;
-              niche?: string;
-              engagementStrength?: string;
-              contentAuthenticity?: string;
-              followerAuthenticity?: string;
-            };
+            data: Record<string, unknown>;
+            analysis: Record<string, unknown>;
           };
-          resultMessage = `[INSTAGRAM_PROFILE_ANALYSIS]\n${JSON.stringify(profileData)}`;
+          const marker =
+            platform === 'tiktok'
+              ? '[TIKTOK_PROFILE_ANALYSIS]'
+              : '[INSTAGRAM_PROFILE_ANALYSIS]';
+          resultMessage = `${marker}\n${JSON.stringify(profileData)}`;
         } else {
-          // Regular result
           resultMessage = `Task completed! Here are the results:\n\n${JSON.stringify(taskResult.result, null, 2)}`;
         }
       } else if (taskResult.status === 'failed') {
@@ -545,13 +608,19 @@ Provide clear, concise responses.`;
         resultMessage = `Task status: ${taskResult.status}`;
       }
 
-      // Save result message to chat
-      await this.chatMessagesRepo.create({
-        userId,
-        role: ChatMessageRole.Assistant,
-        content: resultMessage,
-        detectedEndpoint: null,
-      });
+      if (chatMessageId) {
+        await this.chatMessagesRepo.update(chatMessageId, {
+          content: resultMessage,
+          detectedEndpoint: null,
+        });
+      } else {
+        await this.chatMessagesRepo.create({
+          userId,
+          role: ChatMessageRole.Assistant,
+          content: resultMessage,
+          detectedEndpoint: null,
+        });
+      }
     } catch (error) {
       this.logger.error(
         `Error handling task polling for ${taskId}: ${error instanceof Error ? error.message : String(error)}`,

@@ -37,4 +37,3 @@ export class MakeChatMessageIdNullable1747000000008
     );
   }
 }
-

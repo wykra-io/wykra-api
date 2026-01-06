@@ -390,7 +390,7 @@ pre {
   }
 }
 
-.instagramProfileCard {
+.profileCard {
   background: white;
   border-radius: 12px;
   padding: 16px;
@@ -398,7 +398,7 @@ pre {
   border: 1px solid #e2e8f0;
 }
 
-.instagramProfileHeader {
+.profileCardHeader {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -408,7 +408,7 @@ pre {
   min-height: 64px;
 }
 
-.instagramProfileImage {
+.profileCardImage {
   width: 64px;
   height: 64px;
   border-radius: 50%;
@@ -418,7 +418,7 @@ pre {
   flex-shrink: 0;
 }
 
-.instagramProfileImagePlaceholder {
+.profileCardImagePlaceholder {
   width: 64px;
   height: 64px;
   border-radius: 50%;
@@ -431,11 +431,11 @@ pre {
   color: #94a3b8;
 }
 
-.instagramProfileInfo {
+.profileCardInfo {
   flex: 1;
 }
 
-.instagramProfileName {
+.profileCardName {
   font-size: 18px;
   font-weight: 600;
   color: #0f172a;
@@ -445,67 +445,67 @@ pre {
   gap: 6px;
 }
 
-.instagramProfileLink {
+.profileCardLink {
   color: #0f172a;
   text-decoration: none;
   transition: color 0.2s;
 }
 
-.instagramProfileLink:hover {
+.profileCardLink:hover {
   color: #3b82f6;
   text-decoration: underline;
 }
 
-.instagramVerified {
+.profileCardVerified {
   color: #3b82f6;
   font-size: 16px;
 }
 
-.instagramProfileStats {
+.profileCardStats {
   display: flex;
   gap: 16px;
   font-size: 14px;
   color: #64748b;
 }
 
-.instagramProfileAnalysis {
+.profileCardAnalysis {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.instagramAnalysisSection {
+.profileAnalysisSection {
   margin-bottom: 8px;
 }
 
-.instagramAnalysisSection h4 {
+.profileAnalysisSection h4 {
   font-size: 14px;
   font-weight: 600;
   color: #0f172a;
   margin: 0 0 8px 0;
 }
 
-.instagramAnalysisSection p {
+.profileAnalysisSection p {
   font-size: 14px;
   color: #475569;
   line-height: 1.6;
   margin: 0;
 }
 
-.instagramAnalysisRow {
+.profileAnalysisRow {
   display: flex;
   gap: 8px;
   font-size: 14px;
   padding: 6px 0;
 }
 
-.instagramAnalysisLabel {
+.profileAnalysisLabel {
   font-weight: 600;
   color: #0f172a;
   min-width: 120px;
 }
 
-.instagramAnalysisRow > span:last-child {
+.profileAnalysisRow > span:last-child {
   color: #475569;
 }
 
