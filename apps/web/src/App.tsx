@@ -1,21 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { AuthModal } from './components/AuthModal';
 import { Topbar } from './components/Topbar';
 import { ChatView } from './components/chat/ChatView';
+import { getApiToken } from './api';
 import { useAuth } from './hooks/useAuth';
 import { useChat } from './hooks/useChat';
+import {
+  getTelegramAuthData,
+  isTelegramMiniApp,
+  prepareTelegramMiniAppUi,
+} from './telegram';
 
 export function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const { isAuthed, me, startGithubSignIn, telegramSignIn, logout } = useAuth();
   const chat = useChat({ enabled: isAuthed });
 
+  const attemptedTelegramAutoLoginRef = useRef(false);
+  useEffect(() => {
+    if (attemptedTelegramAutoLoginRef.current) return;
+
+    const token = getApiToken();
+    if (!isTelegramMiniApp() || token) return;
+
+    attemptedTelegramAutoLoginRef.current = true;
+
+    prepareTelegramMiniAppUi();
+
+    const telegramAuthData = getTelegramAuthData();
+    if (!telegramAuthData) return;
+
+    void telegramSignIn().catch((error) => {
+      console.error('Telegram auth error:', error);
+    });
+  }, [telegramSignIn]);
+
   return (
     <div className="container">
       <Topbar
         isAuthed={isAuthed}
         me={me}
+        hideSignIn={isTelegramMiniApp()}
         onOpenSignIn={() => setAuthModalOpen(true)}
         onLogout={() => void logout()}
       />
@@ -58,9 +84,7 @@ export function App() {
         onClose={() => setAuthModalOpen(false)}
         onGithubSignIn={startGithubSignIn}
         onTelegramSignIn={
-          window.Telegram?.WebApp?.initData
-            ? () => void telegramSignIn()
-            : undefined
+          isTelegramMiniApp() ? () => void telegramSignIn() : undefined
         }
       />
     </div>

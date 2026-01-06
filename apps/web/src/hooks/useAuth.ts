@@ -8,6 +8,7 @@ import {
   setApiToken,
 } from '../api';
 import type { MeResponse } from '../types';
+import { getTelegramAuthData } from '../telegram';
 
 function normalizeMeResponse(payload: unknown): MeResponse | null {
   if (!payload || typeof payload !== 'object') return null;
@@ -112,13 +113,12 @@ export function useAuth() {
   }, []);
 
   const telegramSignIn = useCallback(async () => {
-    const tg = window.Telegram?.WebApp;
-    const initData = tg?.initData;
-    if (!initData) throw new Error('Telegram initData not available');
+    const telegramAuthData = getTelegramAuthData();
+    if (!telegramAuthData) throw new Error('Telegram initData not available');
 
     const resp = await apiPost<{ token: string }>(`/api/v1/auth/social`, {
-      provider: 'telegram',
-      code: initData,
+      provider: telegramAuthData.provider,
+      code: telegramAuthData.code,
     });
     setApiToken(resp.token);
     await refreshMe();

@@ -7,9 +7,16 @@ type Props = {
   me: MeResponse | null;
   onOpenSignIn: () => void;
   onLogout: () => void;
+  hideSignIn?: boolean;
 };
 
-export function Topbar({ isAuthed, me, onOpenSignIn, onLogout }: Props) {
+export function Topbar({
+  isAuthed,
+  me,
+  onOpenSignIn,
+  onLogout,
+  hideSignIn,
+}: Props) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   return (
@@ -19,9 +26,11 @@ export function Topbar({ isAuthed, me, onOpenSignIn, onLogout }: Props) {
       </div>
       <div className="topbarRight">
         {!isAuthed ? (
-          <button className="secondary" onClick={onOpenSignIn}>
-            Sign in
-          </button>
+          hideSignIn ? null : (
+            <button className="secondary" onClick={onOpenSignIn}>
+              Sign in
+            </button>
+          )
         ) : (
           <div className="userMenuWrap">
             <button
