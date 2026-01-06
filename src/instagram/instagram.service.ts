@@ -479,7 +479,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
   /**
    * Extracts structured context from a free-form user query about finding influencers.
    *
-   * Uses OpenRouter with the `anthropic/claude-3.5-sonnet` model via LangChain.
+   * Uses OpenRouter with the `google/gemini-2.5-flash` model via LangChain.
    *
    * @param {string} query - The raw user query.
    *
@@ -495,7 +495,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
     }
     try {
       const client = new ChatOpenAI({
-        modelName: 'anthropic/claude-3.5-sonnet',
+        modelName: 'google/gemini-2.5-flash',
         openAIApiKey: this.openrouterConfig.apiKey,
         configuration: {
           baseURL: this.openrouterConfig.baseUrl,
@@ -530,7 +530,7 @@ User query: '${query}'`;
       const responseText = response.content as string;
 
       // Record token usage metrics (always record the call)
-      const model = 'anthropic/claude-3.5-sonnet';
+      const model = 'google/gemini-2.5-flash';
       this.metricsService.recordLLMCall(model, 'instagram_search_context');
       this.metricsService.recordLLMCallDuration(
         model,
@@ -619,7 +619,7 @@ User query: '${query}'`;
       };
     } catch (error) {
       this.metricsService.recordLLMError(
-        'anthropic/claude-3.5-sonnet',
+        'google/gemini-2.5-flash',
         'instagram_search_context',
         'api_error',
       );
@@ -891,7 +891,7 @@ User query: '${query}'`;
     }
 
     const client = new ChatOpenAI({
-      modelName: 'anthropic/claude-3.5-sonnet',
+      modelName: 'google/gemini-2.5-flash',
       openAIApiKey: this.openrouterConfig.apiKey,
       configuration: {
         baseURL: this.openrouterConfig.baseUrl,
@@ -969,7 +969,7 @@ Where:
         const responseText = response.content as string;
 
         // Record token usage metrics (always record the call)
-        const model = 'anthropic/claude-3.5-sonnet';
+        const model = 'google/gemini-2.5-flash';
         this.metricsService.recordLLMCall(model, 'instagram_profile_analysis');
         this.metricsService.recordLLMCallDuration(
           model,
@@ -1092,7 +1092,7 @@ Where:
         }
       } catch (error) {
         this.metricsService.recordLLMError(
-          'anthropic/claude-3.5-sonnet',
+          'google/gemini-2.5-flash',
           'instagram_profile_analysis',
           'api_error',
         );

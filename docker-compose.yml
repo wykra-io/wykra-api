@@ -64,7 +64,7 @@ services:
       BRIGHTDATA_TIMEOUT: ${BRIGHTDATA_TIMEOUT:-30000}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.5-flash}
       OPENROUTER_TIMEOUT: ${OPENROUTER_TIMEOUT:-60000}
     ports:
       - "${APP_PORT:-3000}:${APP_PORT:-3000}"

@@ -20,7 +20,7 @@ import { ChatResponse } from './interfaces';
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
-  private readonly defaultModel = 'anthropic/claude-3.5-sonnet';
+  private readonly defaultModel = 'google/gemini-2.5-flash';
   private readonly llmClient: ChatOpenAI | null;
   private readonly processingMessageContent = 'Processing your request...';
 

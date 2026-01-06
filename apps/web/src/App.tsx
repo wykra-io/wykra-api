@@ -38,13 +38,15 @@ export function App() {
 
   return (
     <div className="container">
-      <Topbar
-        isAuthed={isAuthed}
-        me={me}
-        hideSignIn={isTelegramMiniApp()}
-        onOpenSignIn={() => setAuthModalOpen(true)}
-        onLogout={() => void logout()}
-      />
+      {isTelegramMiniApp() ? null : (
+        <Topbar
+          isAuthed={isAuthed}
+          me={me}
+          hideSignIn={isTelegramMiniApp()}
+          onOpenSignIn={() => setAuthModalOpen(true)}
+          onLogout={() => void logout()}
+        />
+      )}
 
       {!isAuthed ? (
         <div

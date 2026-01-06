@@ -23,7 +23,7 @@ export class OpenrouterConfigService {
   public get model(): string {
     return this.config.get<string>(
       'openrouter.model',
-      'anthropic/claude-3.5-sonnet',
+      'google/gemini-2.5-flash',
     );
   }
 

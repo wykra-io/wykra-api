@@ -58,7 +58,7 @@ export class TikTokLLMService {
 
       this.sonnetClient = new ChatOpenAI({
         ...baseConfig,
-        modelName: 'anthropic/claude-3.5-sonnet',
+        modelName: 'google/gemini-2.5-flash',
       });
     } else {
       this.defaultClient = null;
@@ -360,7 +360,7 @@ User query: '${query}'`;
       const llmDuration = (Date.now() - llmStartTime) / 1000;
       const responseText = response.content as string;
 
-      const model = 'anthropic/claude-3.5-sonnet';
+      const model = 'google/gemini-2.5-flash';
       this.metricsService.recordLLMCall(model, 'tiktok_search_context');
       this.metricsService.recordLLMCallDuration(
         model,
@@ -409,7 +409,7 @@ User query: '${query}'`;
       };
     } catch (error) {
       this.metricsService.recordLLMError(
-        'anthropic/claude-3.5-sonnet',
+        'google/gemini-2.5-flash',
         'tiktok_search_context',
         'api_error',
       );
