@@ -38,6 +38,33 @@ function normalizeMeResponse(payload: unknown): MeResponse | null {
   return { githubLogin, githubAvatarUrl };
 }
 
+function extractToken(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+
+  // Direct shape: { token: string }
+  if (
+    'token' in payload &&
+    typeof (payload as { token?: unknown }).token === 'string'
+  ) {
+    return (payload as { token: string }).token;
+  }
+
+  // Wrapped shape (Nest TransformInterceptor-style): { data: { token: string } }
+  if ('data' in payload && (payload as { data?: unknown }).data) {
+    const data = (payload as { data: unknown }).data;
+    if (
+      data &&
+      typeof data === 'object' &&
+      'token' in data &&
+      typeof (data as { token?: unknown }).token === 'string'
+    ) {
+      return (data as { token: string }).token;
+    }
+  }
+
+  return null;
+}
+
 export function useAuth() {
   const apiBaseUrl = useMemo(() => getApiBaseUrl(), []);
 
@@ -116,11 +143,17 @@ export function useAuth() {
     const telegramAuthData = getTelegramAuthData();
     if (!telegramAuthData) throw new Error('Telegram initData not available');
 
-    const resp = await apiPost<{ token: string }>(`/api/v1/auth/social`, {
+    const resp = await apiPost<unknown>(`/api/v1/auth/social`, {
       provider: telegramAuthData.provider,
       code: telegramAuthData.code,
     });
-    setApiToken(resp.token);
+
+    const token = extractToken(resp);
+    if (!token) {
+      throw new Error('Telegram auth response did not include token');
+    }
+
+    setApiToken(token);
     await refreshMe();
   }, [refreshMe]);
 
