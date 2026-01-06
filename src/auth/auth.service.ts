@@ -5,11 +5,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, createHmac, randomBytes } from 'crypto';
 import type { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { parse } from 'node:querystring';
 
 import {
   API_AUTH_CACHE_TTL_SECONDS,
@@ -18,7 +19,7 @@ import {
 import type { GithubAuthData } from './interfaces/github-auth-data.interface';
 import type { AuthTokenResponse } from './interfaces/auth-token-response.interface';
 import { User } from '@libs/entities/user.entity';
-import { GithubConfigService } from '@libs/config';
+import { GithubConfigService, TelegramConfigService } from '@libs/config';
 
 @Injectable()
 export class AuthService {
@@ -26,6 +27,7 @@ export class AuthService {
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
     @InjectRepository(User) private readonly usersRepo: Repository<User>,
     private readonly githubConfig: GithubConfigService,
+    private readonly telegramConfig: TelegramConfigService,
   ) {}
 
   public async githubAuthFromRequest(req: Request): Promise<GithubAuthData> {
@@ -102,6 +104,15 @@ export class AuthService {
     return this.githubAuthToApiTokenFromGithubToken(token);
   }
 
+  public async telegramAuthToApiTokenFromTelegramCode(
+    initData: string,
+  ): Promise<AuthTokenResponse> {
+    const tg = this.telegramAuthFromInitData(initData);
+    const user = await this.upsertTelegramUser(tg);
+    const token = await this.rotateApiToken(user);
+    return { token };
+  }
+
   public async apiAuthFromRequest(req: Request): Promise<User> {
     const auth = req.headers.authorization;
     if (!auth?.startsWith('Bearer ')) {
@@ -138,6 +149,11 @@ export class AuthService {
         githubLogin: gh.login,
         githubAvatarUrl: gh.avatarUrl || null,
         githubScopes: gh.scopes,
+        telegramId: null,
+        telegramUsername: null,
+        telegramFirstName: null,
+        telegramLastName: null,
+        telegramPhotoUrl: null,
         apiTokenHash: null,
         apiTokenCreatedAt: null,
       });
@@ -145,6 +161,108 @@ export class AuthService {
       user.githubLogin = gh.login;
       user.githubAvatarUrl = gh.avatarUrl || null;
       user.githubScopes = gh.scopes;
+    }
+
+    return await this.usersRepo.save(user);
+  }
+
+  private telegramAuthFromInitData(initData: string): {
+    telegramId: string;
+    telegramUsername: string | null;
+    telegramFirstName: string | null;
+    telegramLastName: string | null;
+    telegramPhotoUrl: string | null;
+  } {
+    const data = String(initData || '').trim();
+    if (!data) throw new UnauthorizedException('Missing code');
+
+    const params = parse(data);
+
+    const token = this.telegramConfig.token;
+    const hmacKey = this.telegramConfig.hmacKey;
+
+    const secretKey = createHmac('sha256', hmacKey).update(token).digest();
+
+    const dataStr = Object.keys(params)
+      .filter((key) => key !== 'hash')
+      .map((key) => `${key}=${params[key]?.toString()}`)
+      .sort()
+      .join('\n');
+
+    const checksum = createHmac('sha256', secretKey)
+      .update(dataStr)
+      .digest('hex');
+
+    if (checksum !== params.hash) {
+      throw new UnauthorizedException('Invalid code');
+    }
+
+    const rawUser = params.user;
+    if (!rawUser) throw new UnauthorizedException('Invalid code');
+
+    let userJson: unknown;
+    try {
+      userJson = JSON.parse(rawUser.toString());
+    } catch {
+      throw new UnauthorizedException('Invalid code');
+    }
+
+    if (!userJson || typeof userJson !== 'object') {
+      throw new UnauthorizedException('Invalid code');
+    }
+
+    const idRaw = (userJson as { id?: unknown }).id;
+    const id =
+      typeof idRaw === 'number'
+        ? String(idRaw)
+        : typeof idRaw === 'string'
+          ? idRaw
+          : null;
+    if (!id) throw new UnauthorizedException('Invalid code');
+
+    const usernameRaw = (userJson as { username?: unknown }).username;
+    const firstNameRaw = (userJson as { first_name?: unknown }).first_name;
+    const lastNameRaw = (userJson as { last_name?: unknown }).last_name;
+    const photoUrlRaw = (userJson as { photo_url?: unknown }).photo_url;
+
+    return {
+      telegramId: id,
+      telegramUsername: typeof usernameRaw === 'string' ? usernameRaw : null,
+      telegramFirstName: typeof firstNameRaw === 'string' ? firstNameRaw : null,
+      telegramLastName: typeof lastNameRaw === 'string' ? lastNameRaw : null,
+      telegramPhotoUrl: typeof photoUrlRaw === 'string' ? photoUrlRaw : null,
+    };
+  }
+
+  private async upsertTelegramUser(tg: {
+    telegramId: string;
+    telegramUsername: string | null;
+    telegramFirstName: string | null;
+    telegramLastName: string | null;
+    telegramPhotoUrl: string | null;
+  }): Promise<User> {
+    const telegramId = `${tg.telegramId}`;
+    let user = await this.usersRepo.findOne({ where: { telegramId } });
+
+    if (!user) {
+      user = this.usersRepo.create({
+        githubId: null,
+        githubLogin: null,
+        githubAvatarUrl: null,
+        githubScopes: null,
+        telegramId,
+        telegramUsername: tg.telegramUsername,
+        telegramFirstName: tg.telegramFirstName,
+        telegramLastName: tg.telegramLastName,
+        telegramPhotoUrl: tg.telegramPhotoUrl,
+        apiTokenHash: null,
+        apiTokenCreatedAt: null,
+      });
+    } else {
+      user.telegramUsername = tg.telegramUsername;
+      user.telegramFirstName = tg.telegramFirstName;
+      user.telegramLastName = tg.telegramLastName;
+      user.telegramPhotoUrl = tg.telegramPhotoUrl;
     }
 
     return await this.usersRepo.save(user);

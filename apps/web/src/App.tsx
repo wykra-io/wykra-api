@@ -8,7 +8,7 @@ import { useChat } from './hooks/useChat';
 
 export function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const { isAuthed, me, startGithubSignIn, logout } = useAuth();
+  const { isAuthed, me, startGithubSignIn, telegramSignIn, logout } = useAuth();
   const chat = useChat({ enabled: isAuthed });
 
   return (
@@ -57,6 +57,11 @@ export function App() {
         open={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         onGithubSignIn={startGithubSignIn}
+        onTelegramSignIn={
+          window.Telegram?.WebApp?.initData
+            ? () => void telegramSignIn()
+            : undefined
+        }
       />
     </div>
   );

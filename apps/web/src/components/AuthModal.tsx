@@ -2,9 +2,15 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onGithubSignIn: () => void;
+  onTelegramSignIn?: () => void;
 };
 
-export function AuthModal({ open, onClose, onGithubSignIn }: Props) {
+export function AuthModal({
+  open,
+  onClose,
+  onGithubSignIn,
+  onTelegramSignIn,
+}: Props) {
   if (!open) return null;
 
   return (
@@ -57,6 +63,13 @@ export function AuthModal({ open, onClose, onGithubSignIn }: Props) {
             Continue with GitHub
           </button>
         </div>
+        {onTelegramSignIn ? (
+          <div style={{ marginTop: 12 }}>
+            <button className="secondary" onClick={onTelegramSignIn}>
+              Continue with Telegram
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

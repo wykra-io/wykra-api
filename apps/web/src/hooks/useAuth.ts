@@ -43,6 +43,29 @@ export function useAuth() {
   const [isAuthed, setIsAuthed] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
 
+  const refreshMe = useCallback(async () => {
+    try {
+      const meResp = await apiGet(`/api/v1/auth/me`);
+      const normalized = normalizeMeResponse(meResp);
+      if (normalized) {
+        setMe(normalized);
+        setIsAuthed(true);
+        return true;
+      }
+      setApiToken(null);
+      setIsAuthed(false);
+      setMe(null);
+      return false;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const isAuthError = msg.includes('401') || msg.includes('Unauthorized');
+      if (isAuthError) setApiToken(null);
+      setIsAuthed(false);
+      setMe(null);
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     const hash = window.location.hash || '';
     const params = new URLSearchParams(
@@ -66,27 +89,8 @@ export function useAuth() {
       return;
     }
 
-    void (async () => {
-      try {
-        const meResp = await apiGet(`/api/v1/auth/me`);
-        const normalized = normalizeMeResponse(meResp);
-        if (normalized) {
-          setMe(normalized);
-          setIsAuthed(true);
-          return;
-        }
-        setApiToken(null);
-        setIsAuthed(false);
-        setMe(null);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        const isAuthError = msg.includes('401') || msg.includes('Unauthorized');
-        if (isAuthError) setApiToken(null);
-        setIsAuthed(false);
-        setMe(null);
-      }
-    })();
-  }, []);
+    void refreshMe();
+  }, [refreshMe]);
 
   const startGithubSignIn = useCallback(() => {
     const returnTo = `${window.location.origin}${window.location.pathname}${window.location.search}`;
@@ -107,5 +111,18 @@ export function useAuth() {
     }
   }, []);
 
-  return { isAuthed, me, startGithubSignIn, logout };
+  const telegramSignIn = useCallback(async () => {
+    const tg = window.Telegram?.WebApp;
+    const initData = tg?.initData;
+    if (!initData) throw new Error('Telegram initData not available');
+
+    const resp = await apiPost<{ token: string }>(`/api/v1/auth/social`, {
+      provider: 'telegram',
+      code: initData,
+    });
+    setApiToken(resp.token);
+    await refreshMe();
+  }, [refreshMe]);
+
+  return { isAuthed, me, startGithubSignIn, telegramSignIn, logout };
 }
