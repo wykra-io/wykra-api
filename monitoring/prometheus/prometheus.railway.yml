@@ -24,7 +24,7 @@ scrape_configs:
   - job_name: 'wykra-api'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['${API_METRICS_TARGET}']
+      - targets: ['__API_METRICS_TARGET__']
         labels:
           service: 'wykra-api'
           environment: 'production'
