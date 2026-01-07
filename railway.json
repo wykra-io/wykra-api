@@ -9,6 +9,9 @@
     },
     "grafana": {
       "root": "apps/grafana"
+    },
+    "prometheus": {
+      "root": "monitoring/prometheus"
     }
   }
 }
