@@ -17,6 +17,28 @@ import { TikTokService } from '../tiktok';
 import { ChatDTO } from './dto';
 import { ChatResponse } from './interfaces';
 
+type ChatEndpoint =
+  | '/instagram/search'
+  | '/instagram/analysis'
+  | '/tiktok/search'
+  | '/tiktok/profile';
+
+type EndpointParams = { query?: string; profile?: string };
+
+const DETECTED_ENDPOINT_FULLPATH_RE =
+  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))\s*\]/i;
+const DETECTED_ENDPOINT_JSON_RE =
+  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))"[\s\S]*\}/;
+const DETECTED_ENDPOINT_ALLOWED_RE =
+  /^\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))$/;
+
+const STRIP_DETECTED_ENDPOINT_MARKER_RE =
+  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))|none)\s*\]/gi;
+const STRIP_DETECTED_ENDPOINT_JSON_RE =
+  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))|none)"[\s\S]*\}/;
+const STRIP_DETECTED_ENDPOINT_PLATFORM_MARKER_RE =
+  /\[DETECTED_ENDPOINT:\s*(instagram|tiktok|none)\]/gi;
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -64,20 +86,255 @@ export class ChatService {
     return this.llmClient;
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private getModelLabel(): string {
+    return this.openrouterConfig.model || this.defaultModel || 'unknown';
+  }
+
+  private buildSystemPrompt(): string {
+    return `You are a helpful AI assistant for the Wykra API. 
+You help users interact with social media analysis tools for Instagram and TikTok.
+
+Available endpoints:
+- /instagram/search - Search for Instagram profiles (POST, requires query parameter)
+- /instagram/analysis - Analyze a specific Instagram profile (POST, requires profile parameter)
+- /tiktok/search - Search for TikTok profiles (POST, requires query parameter)
+- /tiktok/profile - Analyze a specific TikTok profile (POST, requires profile parameter)
+
+IMPORTANT: At the end of your response, you MUST include endpoint detection information in this exact format:
+[DETECTED_ENDPOINT: /instagram/search] or [DETECTED_ENDPOINT: /instagram/analysis] or [DETECTED_ENDPOINT: /tiktok/search] or [DETECTED_ENDPOINT: /tiktok/profile] or [DETECTED_ENDPOINT: none]
+
+Detection rules:
+- If the user wants to search/find/discover Instagram profiles, use [DETECTED_ENDPOINT: /instagram/search]
+- If the user wants to analyze a specific Instagram profile/account, use [DETECTED_ENDPOINT: /instagram/analysis]
+- If the user wants to search/find/discover TikTok profiles, use [DETECTED_ENDPOINT: /tiktok/search]
+- If the user wants to analyze a specific TikTok profile/account, use [DETECTED_ENDPOINT: /tiktok/profile]
+- If the query is not about Instagram or TikTok, use [DETECTED_ENDPOINT: none]
+
+When users ask about Instagram or TikTok, be helpful and explain what they can do with these endpoints.
+Provide clear, concise responses.`;
+  }
+
+  private normalizeLLMContent(content: unknown): string {
+    if (content === null || content === undefined) {
+      return '';
+    }
+
+    switch (typeof content) {
+      case 'string':
+        return content;
+      case 'number':
+      case 'boolean':
+      case 'bigint':
+        return String(content);
+      case 'symbol':
+        return content.description ?? '';
+      case 'function':
+        return '';
+      case 'object':
+        try {
+          return JSON.stringify(content);
+        } catch {
+          return '';
+        }
+      default:
+        return '';
+    }
+  }
+
+  private extractChatAssistantTokenUsage(response: {
+    response_metadata?: {
+      tokenUsage?: {
+        promptTokens?: unknown;
+        completionTokens?: unknown;
+        totalTokens?: unknown;
+      };
+      usage?: {
+        prompt_tokens?: unknown;
+        completion_tokens?: unknown;
+        total_tokens?: unknown;
+      };
+    };
+    usage_metadata?: {
+      input_tokens?: unknown;
+      output_tokens?: unknown;
+      total_tokens?: unknown;
+    };
+  }): { promptTokens: number; completionTokens: number; totalTokens: number } {
+    // Check response_metadata.tokenUsage (camelCase - Anthropic format)
+    if (response.response_metadata?.tokenUsage) {
+      const tokenUsage = response.response_metadata.tokenUsage;
+      return {
+        promptTokens: Number(tokenUsage.promptTokens) || 0,
+        completionTokens: Number(tokenUsage.completionTokens) || 0,
+        totalTokens: Number(tokenUsage.totalTokens) || 0,
+      };
+    }
+
+    // Check usage_metadata (snake_case - LangChain format)
+    if (response.usage_metadata) {
+      return {
+        promptTokens: Number(response.usage_metadata.input_tokens) || 0,
+        completionTokens: Number(response.usage_metadata.output_tokens) || 0,
+        totalTokens: Number(response.usage_metadata.total_tokens) || 0,
+      };
+    }
+
+    // Fallback: check response_metadata.usage (snake_case - OpenAI format)
+    if (response.response_metadata?.usage) {
+      const usage = response.response_metadata.usage;
+      return {
+        promptTokens: Number(usage.prompt_tokens) || 0,
+        completionTokens: Number(usage.completion_tokens) || 0,
+        totalTokens: Number(usage.total_tokens) || 0,
+      };
+    }
+
+    return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  }
+
+  private async invokeChatAssistant(
+    userQuery: string,
+  ): Promise<{ content: string }> {
+    const llmClient = this.ensureLLMClient();
+    const model = this.getModelLabel();
+    const llmServiceLabel = 'chat_assistant';
+    const llmStartTime = Date.now();
+
+    const messages = [
+      new SystemMessage(this.buildSystemPrompt()),
+      new HumanMessage(userQuery),
+    ];
+
+    type LLMInvokeResponse = {
+      content?: unknown;
+      response_metadata?: {
+        tokenUsage?: {
+          promptTokens?: unknown;
+          completionTokens?: unknown;
+          totalTokens?: unknown;
+        };
+        usage?: {
+          prompt_tokens?: unknown;
+          completion_tokens?: unknown;
+          total_tokens?: unknown;
+        };
+      };
+      usage_metadata?: {
+        input_tokens?: unknown;
+        output_tokens?: unknown;
+        total_tokens?: unknown;
+      };
+    };
+
+    try {
+      const response = (await llmClient.invoke(
+        messages,
+      )) as unknown as LLMInvokeResponse;
+      const llmDuration = (Date.now() - llmStartTime) / 1000;
+
+      // Always record the call + duration
+      this.metricsService.recordLLMCall(model, llmServiceLabel);
+      this.metricsService.recordLLMCallDuration(
+        model,
+        llmServiceLabel,
+        llmDuration,
+        'success',
+      );
+
+      const { promptTokens, completionTokens, totalTokens } =
+        this.extractChatAssistantTokenUsage(response);
+
+      // Record token usage metrics (even if usage is missing → 0s)
+      this.metricsService.recordLLMTokenUsage(
+        model,
+        llmServiceLabel,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+      );
+      this.metricsService.recordLLMTokensPerRequest(
+        'chat',
+        promptTokens,
+        completionTokens,
+      );
+
+      return { content: this.normalizeLLMContent(response.content) };
+    } catch (error) {
+      const llmDuration = (Date.now() - llmStartTime) / 1000;
+      this.metricsService.recordLLMCall(model, llmServiceLabel);
+      this.metricsService.recordLLMCallDuration(
+        model,
+        llmServiceLabel,
+        llmDuration,
+        'error',
+      );
+      this.metricsService.recordLLMError(model, llmServiceLabel, 'api_error');
+      throw error;
+    }
+  }
+
+  private cleanAssistantContent(content: string): string {
+    return content
+      .replace(STRIP_DETECTED_ENDPOINT_MARKER_RE, '')
+      .replace(STRIP_DETECTED_ENDPOINT_JSON_RE, '')
+      .replace(STRIP_DETECTED_ENDPOINT_PLATFORM_MARKER_RE, '')
+      .trim();
+  }
+
+  private async safeCreateMessage(params: {
+    userId: number;
+    role: ChatMessageRole;
+    content: string;
+    detectedEndpoint: string | null;
+  }): Promise<{ id: number } | null> {
+    try {
+      const created = await this.chatMessagesRepo.create(params);
+      return { id: created.id };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to save message: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private async safeUpdateMessage(
+    messageId: number,
+    patch: { content?: string; detectedEndpoint?: string | null },
+    context: string,
+  ): Promise<void> {
+    try {
+      await this.chatMessagesRepo.update(messageId, patch);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to update message (${context}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private getRequiredParamForEndpoint(
+    endpoint: ChatEndpoint,
+  ): 'query' | 'profile' {
+    return endpoint.endsWith('/search') ? 'query' : 'profile';
+  }
+
   /**
    * Extracts detected endpoint from LLM response
    */
-  private extractDetectedEndpoint(content: string): string | undefined {
-    const fullPathMatch = content.match(
-      /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))\s*\]/i,
-    );
+  private extractDetectedEndpoint(content: string): ChatEndpoint | undefined {
+    const fullPathMatch = content.match(DETECTED_ENDPOINT_FULLPATH_RE);
     if (fullPathMatch) {
-      return fullPathMatch[1].toLowerCase();
+      const candidate = fullPathMatch[1].toLowerCase();
+      if (DETECTED_ENDPOINT_ALLOWED_RE.test(candidate)) {
+        return candidate as ChatEndpoint;
+      }
     }
 
-    const jsonMatch = content.match(
-      /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))"[\s\S]*\}/,
-    );
+    const jsonMatch = content.match(DETECTED_ENDPOINT_JSON_RE);
     if (jsonMatch) {
       try {
         const json = JSON.parse(jsonMatch[0]) as {
@@ -85,11 +342,9 @@ export class ChatService {
         };
         if (
           json.detectedEndpoint &&
-          /^\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))$/.test(
-            json.detectedEndpoint,
-          )
+          DETECTED_ENDPOINT_ALLOWED_RE.test(json.detectedEndpoint)
         ) {
-          return json.detectedEndpoint.toLowerCase();
+          return json.detectedEndpoint.toLowerCase() as ChatEndpoint;
         }
       } catch {
         // If JSON parsing fails, try regex extraction
@@ -97,7 +352,10 @@ export class ChatService {
           /"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))"/,
         );
         if (endpointMatch) {
-          return endpointMatch[1].toLowerCase();
+          const candidate = endpointMatch[1].toLowerCase();
+          if (DETECTED_ENDPOINT_ALLOWED_RE.test(candidate)) {
+            return candidate as ChatEndpoint;
+          }
         }
       }
     }
@@ -106,11 +364,16 @@ export class ChatService {
       /\[DETECTED_ENDPOINT:\s*(instagram|tiktok)\]/i,
     );
     if (platformMatch) {
-      const platform = platformMatch[1].toLowerCase();
+      const platform = platformMatch[1].toLowerCase() as 'instagram' | 'tiktok';
       const isSearchQuery =
         /\b(search|find|look|discover)\b/i.test(content) ||
         /\b(profiles?|accounts?|users?)\b/i.test(content);
-      return isSearchQuery ? `/${platform}/search` : `/${platform}/profile`;
+      const candidate = isSearchQuery
+        ? (`/${platform}/search` as const)
+        : (`/${platform}/profile` as const);
+      if (DETECTED_ENDPOINT_ALLOWED_RE.test(candidate)) {
+        return candidate as ChatEndpoint;
+      }
     }
 
     return undefined;
@@ -127,9 +390,9 @@ export class ChatService {
    * Extracts parameters for an endpoint from user query using LLM
    */
   private async extractEndpointParameters(
-    endpoint: string,
+    endpoint: ChatEndpoint,
     userQuery: string,
-  ): Promise<{ query?: string; profile?: string } | null> {
+  ): Promise<EndpointParams | null> {
     const llmClient = this.ensureLLMClient();
 
     let prompt = '';
@@ -196,23 +459,32 @@ If you cannot extract a clear profile username, respond with:
    * Calls an endpoint and creates a chat task
    */
   private async callEndpoint(
-    endpoint: string,
-    params: { query?: string; profile?: string },
+    endpoint: ChatEndpoint,
+    params: EndpointParams,
     userId: number,
     chatMessageId: number | null,
   ): Promise<string | null> {
     try {
-      let taskId: string | null = null;
+      const endpointCallMap: Record<
+        ChatEndpoint,
+        (p: EndpointParams) => Promise<string>
+      > = {
+        '/instagram/search': async (p) =>
+          await this.instagramService.search(p.query as string),
+        '/instagram/analysis': async (p) =>
+          await this.instagramService.profile(p.profile as string),
+        '/tiktok/search': async (p) =>
+          await this.tiktokService.search(p.query as string),
+        '/tiktok/profile': async (p) =>
+          await this.tiktokService.profile(p.profile as string),
+      };
 
-      if (endpoint === '/instagram/search' && params.query) {
-        taskId = await this.instagramService.search(params.query);
-      } else if (endpoint === '/instagram/analysis' && params.profile) {
-        taskId = await this.instagramService.profile(params.profile);
-      } else if (endpoint === '/tiktok/search' && params.query) {
-        taskId = await this.tiktokService.search(params.query);
-      } else if (endpoint === '/tiktok/profile' && params.profile) {
-        taskId = await this.tiktokService.profile(params.profile);
+      const required = this.getRequiredParamForEndpoint(endpoint);
+      if (!params[required]) {
+        return null;
       }
+
+      const taskId = await endpointCallMap[endpoint](params);
 
       if (taskId) {
         await this.chatTasksRepo.create({
@@ -275,18 +547,92 @@ If you cannot extract a clear profile username, respond with:
           return { status: 'failed', error: task.error || 'Task failed' };
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await this.sleep(5000);
         attempts++;
       } catch (error) {
         this.logger.warn(
           `Error polling task ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
         );
         attempts++;
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await this.sleep(5000);
       }
     }
 
     return { status: 'timeout' };
+  }
+
+  private async handleDetectedEndpointFlow(params: {
+    detectedEndpoint: ChatEndpoint;
+    userQuery: string;
+    userId: number;
+    startTime: number;
+  }): Promise<ChatResponse> {
+    const { detectedEndpoint, userQuery, userId, startTime } = params;
+    this.logger.log(`Detected endpoint call: ${detectedEndpoint}`);
+
+    const extractedParams = await this.extractEndpointParameters(
+      detectedEndpoint,
+      userQuery,
+    );
+
+    const required = this.getRequiredParamForEndpoint(detectedEndpoint);
+    if (!extractedParams || !extractedParams[required]) {
+      const promptMessage = `I need more information to proceed. Please provide the ${required} for this request.`;
+      await this.safeCreateMessage({
+        userId,
+        role: ChatMessageRole.Assistant,
+        content: promptMessage,
+        detectedEndpoint,
+      });
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.logger.log(`Chat response generated in ${duration}s`);
+      return { response: promptMessage, detectedEndpoint };
+    }
+
+    const processingMsg = await this.safeCreateMessage({
+      userId,
+      role: ChatMessageRole.Assistant,
+      content: this.processingMessageContent,
+      detectedEndpoint,
+    });
+    const processingMessageId = processingMsg?.id ?? null;
+
+    const taskId = await this.callEndpoint(
+      detectedEndpoint,
+      extractedParams,
+      userId,
+      processingMessageId,
+    );
+
+    if (!taskId) {
+      const errorMessage =
+        'Failed to start the requested task. Please try again.';
+      if (processingMessageId) {
+        await this.safeUpdateMessage(
+          processingMessageId,
+          { content: errorMessage, detectedEndpoint: null },
+          'task start failure',
+        );
+      } else {
+        await this.safeCreateMessage({
+          userId,
+          role: ChatMessageRole.Assistant,
+          content: errorMessage,
+          detectedEndpoint: null,
+        });
+      }
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.logger.log(`Chat response generated in ${duration}s`);
+      return { response: errorMessage };
+    }
+
+    void this.handleTaskPolling(taskId, userId);
+
+    const duration = (Date.now() - startTime) / 1000;
+    this.logger.log(`Chat response generated in ${duration}s`);
+    return { response: '', detectedEndpoint, taskId };
   }
 
   /**
@@ -300,277 +646,35 @@ If you cannot extract a clear profile username, respond with:
         `Processing chat query: ${dto.query.substring(0, 50)}...`,
       );
 
-      const systemPrompt = `You are a helpful AI assistant for the Wykra API. 
-You help users interact with social media analysis tools for Instagram and TikTok.
+      const { content: rawContent } = await this.invokeChatAssistant(dto.query);
+      const detectedEndpoint = this.extractDetectedEndpoint(rawContent);
+      const cleanContent = this.cleanAssistantContent(rawContent);
 
-Available endpoints:
-- /instagram/search - Search for Instagram profiles (POST, requires query parameter)
-- /instagram/analysis - Analyze a specific Instagram profile (POST, requires profile parameter)
-- /tiktok/search - Search for TikTok profiles (POST, requires query parameter)
-- /tiktok/profile - Analyze a specific TikTok profile (POST, requires profile parameter)
+      await this.safeCreateMessage({
+        userId,
+        role: ChatMessageRole.User,
+        content: dto.query,
+        detectedEndpoint: null,
+      });
 
-IMPORTANT: At the end of your response, you MUST include endpoint detection information in this exact format:
-[DETECTED_ENDPOINT: /instagram/search] or [DETECTED_ENDPOINT: /instagram/analysis] or [DETECTED_ENDPOINT: /tiktok/search] or [DETECTED_ENDPOINT: /tiktok/profile] or [DETECTED_ENDPOINT: none]
-
-Detection rules:
-- If the user wants to search/find/discover Instagram profiles, use [DETECTED_ENDPOINT: /instagram/search]
-- If the user wants to analyze a specific Instagram profile/account, use [DETECTED_ENDPOINT: /instagram/analysis]
-- If the user wants to search/find/discover TikTok profiles, use [DETECTED_ENDPOINT: /tiktok/search]
-- If the user wants to analyze a specific TikTok profile/account, use [DETECTED_ENDPOINT: /tiktok/profile]
-- If the query is not about Instagram or TikTok, use [DETECTED_ENDPOINT: none]
-
-When users ask about Instagram or TikTok, be helpful and explain what they can do with these endpoints.
-Provide clear, concise responses.`;
-
-      const llmClient = this.ensureLLMClient();
-
-      const messages = [
-        new SystemMessage(systemPrompt),
-        new HumanMessage(dto.query),
-      ];
-
-      const llmStartTime = Date.now();
-      const model =
-        this.openrouterConfig.model || this.defaultModel || 'unknown';
-      const llmServiceLabel = 'chat_assistant';
-
-      type LLMInvokeResponse = {
-        content?: unknown;
-        response_metadata?: {
-          tokenUsage?: {
-            promptTokens?: unknown;
-            completionTokens?: unknown;
-            totalTokens?: unknown;
-          };
-          usage?: {
-            prompt_tokens?: unknown;
-            completion_tokens?: unknown;
-            total_tokens?: unknown;
-          };
-        };
-        usage_metadata?: {
-          input_tokens?: unknown;
-          output_tokens?: unknown;
-          total_tokens?: unknown;
-        };
-      };
-
-      let response: LLMInvokeResponse;
-      try {
-        response = (await llmClient.invoke(messages)) as unknown as LLMInvokeResponse;
-        const llmDuration = (Date.now() - llmStartTime) / 1000;
-
-        // Always record the call + duration
-        this.metricsService.recordLLMCall(model, llmServiceLabel);
-        this.metricsService.recordLLMCallDuration(
-          model,
-          llmServiceLabel,
-          llmDuration,
-          'success',
-        );
-
-        // Extract usage from multiple possible locations
-        let promptTokens = 0;
-        let completionTokens = 0;
-        let totalTokens = 0;
-
-        // Check response_metadata.tokenUsage (camelCase - Anthropic format)
-        if (response.response_metadata?.tokenUsage) {
-          const tokenUsage = response.response_metadata.tokenUsage;
-          promptTokens = Number(tokenUsage.promptTokens) || 0;
-          completionTokens = Number(tokenUsage.completionTokens) || 0;
-          totalTokens = Number(tokenUsage.totalTokens) || 0;
-        }
-        // Check usage_metadata (snake_case - LangChain format)
-        else if (response.usage_metadata) {
-          promptTokens = Number(response.usage_metadata.input_tokens) || 0;
-          completionTokens = Number(response.usage_metadata.output_tokens) || 0;
-          totalTokens = Number(response.usage_metadata.total_tokens) || 0;
-        }
-        // Fallback: check response_metadata.usage (snake_case - OpenAI format)
-        else if (response.response_metadata?.usage) {
-          const usage = response.response_metadata.usage;
-          promptTokens = Number(usage.prompt_tokens) || 0;
-          completionTokens = Number(usage.completion_tokens) || 0;
-          totalTokens = Number(usage.total_tokens) || 0;
-        }
-
-        // Record token usage metrics (even if usage is missing → 0s)
-        this.metricsService.recordLLMTokenUsage(
-          model,
-          llmServiceLabel,
-          promptTokens,
-          completionTokens,
-          totalTokens,
-        );
-        this.metricsService.recordLLMTokensPerRequest(
-          'chat',
-          promptTokens,
-          completionTokens,
-        );
-      } catch (error) {
-        const llmDuration = (Date.now() - llmStartTime) / 1000;
-        this.metricsService.recordLLMCall(model, llmServiceLabel);
-        this.metricsService.recordLLMCallDuration(
-          model,
-          llmServiceLabel,
-          llmDuration,
-          'error',
-        );
-        this.metricsService.recordLLMError(model, llmServiceLabel, 'api_error');
-        throw error;
-      }
-      const content =
-        typeof response.content === 'string'
-          ? response.content
-          : String(response.content ?? '');
-
-      const detectedEndpoint = this.extractDetectedEndpoint(content);
-
-      const cleanContent = content
-        .replace(
-          /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))|none)\s*\]/gi,
-          '',
-        )
-        .replace(
-          /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))|none)"[\s\S]*\}/,
-          '',
-        )
-        .replace(/\[DETECTED_ENDPOINT:\s*(instagram|tiktok|none)\]/gi, '')
-        .trim();
-
-      if (detectedEndpoint && detectedEndpoint !== 'none') {
-        this.logger.log(`Detected endpoint call: ${detectedEndpoint}`);
-      }
-
-      try {
-        await this.chatMessagesRepo.create({
+      if (detectedEndpoint) {
+        return await this.handleDetectedEndpointFlow({
+          detectedEndpoint,
+          userQuery: dto.query,
           userId,
-          role: ChatMessageRole.User,
-          content: dto.query,
-          detectedEndpoint: null,
+          startTime,
         });
-      } catch (error) {
-        this.logger.warn(
-          `Failed to save user message: ${error instanceof Error ? error.message : String(error)}`,
-        );
       }
 
-      if (detectedEndpoint && detectedEndpoint !== 'none') {
-        const params = await this.extractEndpointParameters(
-          detectedEndpoint,
-          dto.query,
-        );
-
-        const needsQuery = detectedEndpoint.endsWith('/search');
-        const needsProfile =
-          detectedEndpoint.endsWith('/analysis') ||
-          detectedEndpoint.endsWith('/profile');
-
-        if (
-          !params ||
-          (needsQuery && !params.query) ||
-          (needsProfile && !params.profile)
-        ) {
-          const missingField = needsQuery ? 'query' : 'profile';
-          const promptMessage = `I need more information to proceed. Please provide the ${missingField} for this request.`;
-          try {
-            await this.chatMessagesRepo.create({
-              userId,
-              role: ChatMessageRole.Assistant,
-              content: promptMessage,
-              detectedEndpoint,
-            });
-          } catch (error) {
-            this.logger.warn(
-              `Failed to save assistant prompt message: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-
-          const duration = (Date.now() - startTime) / 1000;
-          this.logger.log(`Chat response generated in ${duration}s`);
-          return { response: promptMessage, detectedEndpoint };
-        }
-
-        let processingMessageId: number | null = null;
-        try {
-          const processingMsg = await this.chatMessagesRepo.create({
-            userId,
-            role: ChatMessageRole.Assistant,
-            content: this.processingMessageContent,
-            detectedEndpoint,
-          });
-          processingMessageId = processingMsg.id;
-        } catch (error) {
-          this.logger.warn(
-            `Failed to save processing message: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-
-        const taskId = await this.callEndpoint(
-          detectedEndpoint,
-          params,
-          userId,
-          processingMessageId,
-        );
-
-        if (!taskId) {
-          const errorMessage =
-            'Failed to start the requested task. Please try again.';
-          if (processingMessageId) {
-            try {
-              await this.chatMessagesRepo.update(processingMessageId, {
-                content: errorMessage,
-                detectedEndpoint: null,
-              });
-            } catch (error) {
-              this.logger.warn(
-                `Failed to update processing message after task start failure: ${error instanceof Error ? error.message : String(error)}`,
-              );
-            }
-          } else {
-            try {
-              await this.chatMessagesRepo.create({
-                userId,
-                role: ChatMessageRole.Assistant,
-                content: errorMessage,
-                detectedEndpoint: null,
-              });
-            } catch (error) {
-              this.logger.warn(
-                `Failed to save assistant error message: ${error instanceof Error ? error.message : String(error)}`,
-              );
-            }
-          }
-
-          const duration = (Date.now() - startTime) / 1000;
-          this.logger.log(`Chat response generated in ${duration}s`);
-          return { response: errorMessage };
-        }
-
-        void this.handleTaskPolling(taskId, userId);
-
-        const duration = (Date.now() - startTime) / 1000;
-        this.logger.log(`Chat response generated in ${duration}s`);
-        return { response: '', detectedEndpoint, taskId };
-      } else {
-        try {
-          await this.chatMessagesRepo.create({
-            userId,
-            role: ChatMessageRole.Assistant,
-            content: cleanContent,
-            detectedEndpoint: null,
-          });
-        } catch (error) {
-          this.logger.warn(
-            `Failed to save assistant message: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
+      await this.safeCreateMessage({
+        userId,
+        role: ChatMessageRole.Assistant,
+        content: cleanContent,
+        detectedEndpoint: null,
+      });
 
       const duration = (Date.now() - startTime) / 1000;
       this.logger.log(`Chat response generated in ${duration}s`);
-
       return { response: cleanContent };
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
@@ -625,6 +729,71 @@ Provide clear, concise responses.`;
     return null;
   }
 
+  private isProfileAnalysisResult(value: unknown): value is {
+    profile: string;
+    data: Record<string, unknown>;
+    analysis: Record<string, unknown>;
+  } {
+    return (
+      !!value &&
+      typeof value === 'object' &&
+      'profile' in value &&
+      'data' in value &&
+      'analysis' in value
+    );
+  }
+
+  private getProfileAnalysisMarker(
+    platform: 'instagram' | 'tiktok' | null,
+  ): string {
+    return platform === 'tiktok'
+      ? '[TIKTOK_PROFILE_ANALYSIS]'
+      : '[INSTAGRAM_PROFILE_ANALYSIS]';
+  }
+
+  private formatTaskResultMessage(params: {
+    status: string;
+    result?: unknown;
+    error?: string;
+    endpoint?: string | null;
+  }): string {
+    const { status, result, error, endpoint } = params;
+
+    if (status === 'completed' && result) {
+      const platform = this.detectPlatform(endpoint, result);
+
+      if (typeof result === 'string') {
+        try {
+          const parsed = JSON.parse(result) as unknown;
+          if (this.isProfileAnalysisResult(parsed)) {
+            const marker = this.getProfileAnalysisMarker(platform);
+            return `${marker}\n${JSON.stringify(parsed)}`;
+          }
+          return `Task completed! Here are the results:\n\n${result}`;
+        } catch {
+          return `Task completed! Here are the results:\n\n${result}`;
+        }
+      }
+
+      if (this.isProfileAnalysisResult(result)) {
+        const marker = this.getProfileAnalysisMarker(platform);
+        return `${marker}\n${JSON.stringify(result)}`;
+      }
+
+      return `Task completed! Here are the results:\n\n${JSON.stringify(result, null, 2)}`;
+    }
+
+    if (status === 'failed') {
+      return `Task failed: ${error || 'Unknown error'}`;
+    }
+
+    if (status === 'timeout') {
+      return 'Task is taking longer than expected. You can check the status later using the task ID.';
+    }
+
+    return `Task status: ${status}`;
+  }
+
   /**
    * Handles task polling and sends results back to chat
    */
@@ -637,77 +806,41 @@ Provide clear, concise responses.`;
       const endpoint = chatTask?.endpoint;
       const chatMessageId = chatTask?.chatMessageId ?? null;
 
-      await this.chatTasksRepo.update(taskId, { status: 'polling' });
+      try {
+        await this.chatTasksRepo.update(taskId, { status: 'polling' });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to update chat task ${taskId} to polling: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
 
       const taskResult = await this.pollTaskStatus(taskId);
 
-      await this.chatTasksRepo.update(taskId, {
-        status: taskResult.status,
-      });
-
-      let resultMessage = '';
-      if (taskResult.status === 'completed' && taskResult.result) {
-        const result = taskResult.result;
-
-        const platform = this.detectPlatform(endpoint, result);
-
-        if (typeof result === 'string') {
-          try {
-            const parsed = JSON.parse(result);
-            if (
-              parsed &&
-              typeof parsed === 'object' &&
-              'profile' in parsed &&
-              'data' in parsed &&
-              'analysis' in parsed
-            ) {
-              const marker =
-                platform === 'tiktok'
-                  ? '[TIKTOK_PROFILE_ANALYSIS]'
-                  : '[INSTAGRAM_PROFILE_ANALYSIS]';
-              resultMessage = `${marker}\n${JSON.stringify(parsed)}`;
-            } else {
-              resultMessage = `Task completed! Here are the results:\n\n${result}`;
-            }
-          } catch {
-            resultMessage = `Task completed! Here are the results:\n\n${result}`;
-          }
-        } else if (
-          result &&
-          typeof result === 'object' &&
-          'profile' in result &&
-          'data' in result &&
-          'analysis' in result
-        ) {
-          const profileData = result as {
-            profile: string;
-            data: Record<string, unknown>;
-            analysis: Record<string, unknown>;
-          };
-          const marker =
-            platform === 'tiktok'
-              ? '[TIKTOK_PROFILE_ANALYSIS]'
-              : '[INSTAGRAM_PROFILE_ANALYSIS]';
-          resultMessage = `${marker}\n${JSON.stringify(profileData)}`;
-        } else {
-          resultMessage = `Task completed! Here are the results:\n\n${JSON.stringify(taskResult.result, null, 2)}`;
-        }
-      } else if (taskResult.status === 'failed') {
-        resultMessage = `Task failed: ${taskResult.error || 'Unknown error'}`;
-      } else if (taskResult.status === 'timeout') {
-        resultMessage =
-          'Task is taking longer than expected. You can check the status later using the task ID.';
-      } else {
-        resultMessage = `Task status: ${taskResult.status}`;
+      try {
+        await this.chatTasksRepo.update(taskId, {
+          status: taskResult.status,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to update chat task ${taskId} status to ${taskResult.status}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
 
+      const resultMessage = this.formatTaskResultMessage({
+        status: taskResult.status,
+        result: taskResult.result,
+        error: taskResult.error,
+        endpoint,
+      });
+
       if (chatMessageId) {
-        await this.chatMessagesRepo.update(chatMessageId, {
-          content: resultMessage,
-          detectedEndpoint: null,
-        });
+        await this.safeUpdateMessage(
+          chatMessageId,
+          { content: resultMessage, detectedEndpoint: null },
+          'task polling result update',
+        );
       } else {
-        await this.chatMessagesRepo.create({
+        await this.safeCreateMessage({
           userId,
           role: ChatMessageRole.Assistant,
           content: resultMessage,
