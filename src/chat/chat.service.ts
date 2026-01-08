@@ -17,21 +17,25 @@ import { TikTokService } from '../tiktok';
 import { ChatDTO } from './dto';
 import { ChatResponse } from './interfaces';
 
-type ChatEndpoint = '/instagram/analysis' | '/tiktok/profile';
+type ChatEndpoint =
+  | '/instagram/search'
+  | '/instagram/analysis'
+  | '/tiktok/search'
+  | '/tiktok/profile';
 
 type EndpointParams = { query?: string; profile?: string };
 
 const DETECTED_ENDPOINT_FULLPATH_RE =
-  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|tiktok\/profile))\s*\]/i;
+  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))\s*\]/i;
 const DETECTED_ENDPOINT_JSON_RE =
-  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile))"[\s\S]*\}/;
+  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))"[\s\S]*\}/;
 const DETECTED_ENDPOINT_ALLOWED_RE =
-  /^\/(?:instagram\/analysis|tiktok\/profile)$/;
+  /^\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))$/;
 
 const STRIP_DETECTED_ENDPOINT_MARKER_RE =
-  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|tiktok\/profile)|none)\s*\]/gi;
+  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))|none)\s*\]/gi;
 const STRIP_DETECTED_ENDPOINT_JSON_RE =
-  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile)|none)"[\s\S]*\}/;
+  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile))|none)"[\s\S]*\}/;
 const STRIP_DETECTED_ENDPOINT_PLATFORM_MARKER_RE =
   /\[DETECTED_ENDPOINT:\s*(instagram|tiktok|none)\]/gi;
 
@@ -95,14 +99,18 @@ export class ChatService {
 You help users interact with social media analysis tools for Instagram and TikTok.
 
 Available endpoints:
+- /instagram/search - Search for Instagram profiles (POST, requires query parameter)
 - /instagram/analysis - Analyze a specific Instagram profile (POST, requires profile parameter)
+- /tiktok/search - Search for TikTok profiles (POST, requires query parameter)
 - /tiktok/profile - Analyze a specific TikTok profile (POST, requires profile parameter)
 
 IMPORTANT: At the end of your response, you MUST include endpoint detection information in this exact format:
-[DETECTED_ENDPOINT: /instagram/analysis] or [DETECTED_ENDPOINT: /tiktok/profile] or [DETECTED_ENDPOINT: none]
+[DETECTED_ENDPOINT: /instagram/search] or [DETECTED_ENDPOINT: /instagram/analysis] or [DETECTED_ENDPOINT: /tiktok/search] or [DETECTED_ENDPOINT: /tiktok/profile] or [DETECTED_ENDPOINT: none]
 
 Detection rules:
+- If the user wants to search/find/discover Instagram profiles, use [DETECTED_ENDPOINT: /instagram/search]
 - If the user wants to analyze a specific Instagram profile/account, use [DETECTED_ENDPOINT: /instagram/analysis]
+- If the user wants to search/find/discover TikTok profiles, use [DETECTED_ENDPOINT: /tiktok/search]
 - If the user wants to analyze a specific TikTok profile/account, use [DETECTED_ENDPOINT: /tiktok/profile]
 - If the query is not about Instagram or TikTok, use [DETECTED_ENDPOINT: none]
 
@@ -313,9 +321,10 @@ IMPORTANT formatting rules:
     }
   }
 
-  private getRequiredParamForEndpoint(): 'profile' {
-    // Search endpoints are disabled/removed from chat; only analysis/profile endpoints remain.
-    return 'profile';
+  private getRequiredParamForEndpoint(
+    endpoint: ChatEndpoint,
+  ): 'query' | 'profile' {
+    return endpoint.endsWith('/search') ? 'query' : 'profile';
   }
 
   /**
@@ -345,7 +354,7 @@ IMPORTANT formatting rules:
       } catch {
         // If JSON parsing fails, try regex extraction
         const endpointMatch = jsonMatch[0].match(
-          /"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile))"/,
+          /"detectedEndpoint":\s*"(\/(?:instagram\/(?:search|analysis)|tiktok\/(?:search|profile)))"/,
         );
         if (endpointMatch) {
           const candidate = endpointMatch[1].toLowerCase();
@@ -361,10 +370,12 @@ IMPORTANT formatting rules:
     );
     if (platformMatch) {
       const platform = platformMatch[1].toLowerCase() as 'instagram' | 'tiktok';
-      const candidate =
-        platform === 'instagram'
-          ? ('/instagram/analysis' as const)
-          : ('/tiktok/profile' as const);
+      const isSearchQuery =
+        /\b(search|find|look|discover)\b/i.test(content) ||
+        /\b(profiles?|accounts?|users?)\b/i.test(content);
+      const candidate = isSearchQuery
+        ? (`/${platform}/search` as const)
+        : (`/${platform}/profile` as const);
       if (DETECTED_ENDPOINT_ALLOWED_RE.test(candidate)) {
         return candidate as ChatEndpoint;
       }
@@ -390,7 +401,24 @@ IMPORTANT formatting rules:
     const llmClient = this.ensureLLMClient();
 
     let prompt = '';
-    if (endpoint.includes('/profile') || endpoint.includes('/analysis')) {
+    if (endpoint.includes('/search')) {
+      prompt = `Extract the search query from the user's request. The user wants to search for profiles.
+
+User request: "${userQuery}"
+
+Extract the search query that describes what profiles to find. For example:
+- "Find Instagram accounts from Portugal who post about cooking" -> query: "Find Instagram accounts from Portugal who post about cooking"
+- "Search for TikTok creators in fashion" -> query: "Search for TikTok creators in fashion"
+
+Respond with ONLY a JSON object in this format:
+{"query": "the extracted search query"}
+
+If you cannot extract a clear search query, respond with:
+{"missing": "query"}`;
+    } else if (
+      endpoint.includes('/profile') ||
+      endpoint.includes('/analysis')
+    ) {
       prompt = `Extract the profile username from the user's request. The user wants to analyze a specific profile.
 
 User request: "${userQuery}"
@@ -446,13 +474,17 @@ If you cannot extract a clear profile username, respond with:
         ChatEndpoint,
         (p: EndpointParams) => Promise<string>
       > = {
+        '/instagram/search': async (p) =>
+          await this.instagramService.search(p.query as string),
         '/instagram/analysis': async (p) =>
           await this.instagramService.profile(p.profile as string),
+        '/tiktok/search': async (p) =>
+          await this.tiktokService.search(p.query as string),
         '/tiktok/profile': async (p) =>
           await this.tiktokService.profile(p.profile as string),
       };
 
-      const required = this.getRequiredParamForEndpoint();
+      const required = this.getRequiredParamForEndpoint(endpoint);
       if (!params[required]) {
         return null;
       }
@@ -548,7 +580,7 @@ If you cannot extract a clear profile username, respond with:
       userQuery,
     );
 
-    const required = this.getRequiredParamForEndpoint();
+    const required = this.getRequiredParamForEndpoint(detectedEndpoint);
     if (!extractedParams || !extractedParams[required]) {
       const promptMessage = `I need more information to proceed. Please provide the ${required} for this request.`;
       await this.safeCreateMessage({
