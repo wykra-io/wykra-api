@@ -113,6 +113,41 @@ body {
   flex-direction: column;
 }
 
+.footer {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.footerLinks {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer a {
+  color: #334155;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.footer a:hover {
+  color: #0f172a;
+  text-decoration: underline;
+}
+
+.footerSep {
+  color: #cbd5e1;
+}
+
 .card {
   background: white;
   border: 1px solid #e2e8f0;

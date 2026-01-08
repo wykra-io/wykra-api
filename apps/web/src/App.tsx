@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { AuthModal } from './components/AuthModal';
+import { Footer } from './components/Footer';
 import { Topbar } from './components/Topbar';
 import { ChatView } from './components/chat/ChatView';
 import { getApiToken } from './api';
@@ -80,6 +81,8 @@ export function App() {
           onSubmit={(e) => void chat.onSubmit(e)}
         />
       )}
+
+      {isTelegramMiniApp() ? null : <Footer />}
 
       <AuthModal
         open={authModalOpen}
