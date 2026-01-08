@@ -28,6 +28,8 @@ interface TikTokCommentsSuspiciousJobData {
 @Processor(QueueName.TikTok)
 export class TikTokProcessor {
   private readonly logger = new Logger(TikTokProcessor.name);
+  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
+  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   constructor(
     private readonly tasksRepo: TasksRepository,
@@ -54,6 +56,19 @@ export class TikTokProcessor {
     );
 
     try {
+      if (TikTokProcessor.SEARCH_PROFILES_DISABLED) {
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Failed,
+          error: 'TikTok profile search is currently disabled.',
+          completedAt: new Date(),
+        });
+        this.metricsService.recordTaskStatusChange('failed', 'tiktok_search');
+        this.logger.warn(
+          `TikTok search task ${taskId} skipped (disabled). Query: ${query}`,
+        );
+        return;
+      }
+
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,
         startedAt: new Date(),
@@ -107,13 +122,13 @@ export class TikTokProcessor {
         }
       };
 
-      for (const term of searchTerms.slice(0, 3)) {
-        const searchUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(
-          term,
-        )}`;
+      const searchUrls = searchTerms.slice(0, 3).map((term) => {
+        return `https://www.tiktok.com/search?q=${encodeURIComponent(term)}`;
+      });
 
+      if (searchUrls.length > 0) {
         const batch = await this.tiktokService.discoverProfilesBySearchUrl(
-          searchUrl,
+          searchUrls,
           country,
         );
         addProfilesToMap(batch);

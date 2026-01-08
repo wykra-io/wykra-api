@@ -26,7 +26,13 @@ import { QueueService } from './queue.service';
           attempts: 3,
         },
         createClient(type, redisOpts: RedisOptions) {
-          const opts: RedisOptions = { ...redisOpts };
+          const opts: RedisOptions = {
+            ...redisOpts,
+            host: config.host,
+            port: config.port,
+            password: config.password,
+            db: config.dbs.queues,
+          };
 
           if (['bclient', 'subscriber'].includes(type)) {
             opts.enableReadyCheck = false;
@@ -34,7 +40,15 @@ import { QueueService } from './queue.service';
           }
 
           return config.isCluster
-            ? new Redis.Cluster([{ host: opts.host, port: opts.port }], opts)
+            ? new Redis.Cluster(
+                [{ host: config.host, port: config.port }],
+                {
+                  ...opts,
+                  redisOptions: {
+                    password: config.password,
+                  },
+                },
+              )
             : new Redis(opts);
         },
       }),

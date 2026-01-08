@@ -1,7 +1,6 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { useContainer } from 'class-validator';
-import { createProxyMiddleware } from 'http-proxy-middleware';
 
 import { AppConfigService } from '@libs/config';
 import { TransformInterceptor } from '@libs/interceptors';
@@ -12,29 +11,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(AppConfigService);
 
-  // Proxy Grafana requests to Grafana service
-  const grafanaUrl = process.env.GRAFANA_INTERNAL_URL || 'http://grafana:3000';
-  const grafanaProxy = createProxyMiddleware({
-    target: grafanaUrl,
-    changeOrigin: true,
-    pathRewrite: {
-      '^/grafana': '',
-    },
-    on: {
-      proxyReq: (proxyReq, req) => {
-        proxyReq.setHeader('X-Forwarded-Host', req.headers.host || '');
-        proxyReq.setHeader(
-          'X-Forwarded-Proto',
-          req.headers['x-forwarded-proto'] || 'http',
-        );
-        proxyReq.setHeader('X-Forwarded-Prefix', '/grafana');
-      },
-    },
-  });
-  app.use('/grafana', grafanaProxy);
-
   app.setGlobalPrefix(config.globalPrefix, {
-    exclude: ['/metrics', '/grafana'],
+    exclude: ['/metrics'],
   });
 
   app.useGlobalInterceptors(new TransformInterceptor());
@@ -48,7 +26,50 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors();
+  // CORS configuration: allow web app origin and common dev origins
+  const allowedOrigins: string[] = [
+    'https://app.wykra.io',
+    'http://localhost:5173',
+    'http://localhost:4173',
+    'http://localhost:3000',
+    'https://api.wykra.io',
+  ];
+  const corsOrigin = process.env.CORS_ORIGIN;
+  if (corsOrigin) {
+    allowedOrigins.push(...corsOrigin.split(',').map((s: string) => s.trim()));
+  }
+
+  app.enableCors({
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      // Allow requests with no origin (like mobile apps, Postman, curl)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      // In development, allow all origins
+      if (config.isDev) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+    ],
+  });
   app.enableShutdownHooks();
 
   useContainer(app.select(AppModule), { fallbackOnErrors: true });

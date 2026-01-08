@@ -1,29 +1,28 @@
-import { Controller, Get, Post, Query, Body } from '@nestjs/common';
+import { Controller, Post, Body, GoneException } from '@nestjs/common';
 
-import {
-  InstagramAnalysisDTO,
-  InstagramProfileDTO,
-  SearchPostDto,
-} from './dto';
-import { InstagramAnalysisData } from './interfaces';
+import { InstagramProfileDTO, SearchPostDto } from './dto';
 import { InstagramService } from './instagram.service';
 
 @Controller('instagram')
 export class InstagramController {
   constructor(private readonly instagramService: InstagramService) {}
 
+  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
+  private static readonly SEARCH_PROFILES_DISABLED = true;
+
   /**
-   * Analyzes an Instagram profile using third-party API and processes results with LLM.
+   * Creates a new Instagram profile analysis task (queued).
    *
-   * @param {InstagramAnalysisDTO} query - Query parameters containing the Instagram profile to analyze.
+   * @param {InstagramProfileDTO} dto - Profile data containing the Instagram profile to analyze.
    *
-   * @returns {Promise<InstagramAnalysisData>} Analysis results processed by LLM.
+   * @returns {Promise<{ taskId: string }>} The created task ID.
    */
-  @Get('analysis')
+  @Post('analysis')
   public async analyzeProfile(
-    @Query() query: InstagramAnalysisDTO,
-  ): Promise<InstagramAnalysisData> {
-    return this.instagramService.analyzeProfile(query.profile);
+    @Body() dto: InstagramProfileDTO,
+  ): Promise<{ taskId: string }> {
+    const taskId = await this.instagramService.profile(dto.profile);
+    return { taskId };
   }
 
   /**
@@ -38,6 +37,14 @@ export class InstagramController {
     if (!dto.query || typeof dto.query !== 'string') {
       throw new Error('Query must be a non-empty string');
     }
+
+    if (InstagramController.SEARCH_PROFILES_DISABLED) {
+      // Previously: const taskId = await this.instagramService.search(dto.query);
+      throw new GoneException(
+        'Instagram profile search is currently disabled.',
+      );
+    }
+
     const taskId = await this.instagramService.search(dto.query);
     return { taskId };
   }

@@ -5,14 +5,33 @@ import { Model } from './base';
 @Entity('users')
 export class User extends Model {
   @Index('users_github_id_idx')
-  @Column({ name: 'github_id', type: 'bigint', unique: true })
-  githubId!: string;
+  @Column({ name: 'github_id', type: 'bigint', unique: true, nullable: true })
+  githubId!: string | null;
 
-  @Column({ name: 'github_login', type: 'text' })
-  githubLogin!: string;
+  @Column({ name: 'github_login', type: 'text', nullable: true })
+  githubLogin!: string | null;
+
+  @Column({ name: 'github_avatar_url', type: 'text', nullable: true })
+  githubAvatarUrl!: string | null;
 
   @Column({ name: 'github_scopes', type: 'jsonb', nullable: true })
   githubScopes!: string[] | null;
+
+  @Index('users_telegram_id_idx')
+  @Column({ name: 'telegram_id', type: 'bigint', unique: true, nullable: true })
+  telegramId!: string | null;
+
+  @Column({ name: 'telegram_username', type: 'text', nullable: true })
+  telegramUsername!: string | null;
+
+  @Column({ name: 'telegram_first_name', type: 'text', nullable: true })
+  telegramFirstName!: string | null;
+
+  @Column({ name: 'telegram_last_name', type: 'text', nullable: true })
+  telegramLastName!: string | null;
+
+  @Column({ name: 'telegram_photo_url', type: 'text', nullable: true })
+  telegramPhotoUrl!: string | null;
 
   @Index('users_api_token_hash_idx')
   @Column({

@@ -1,6 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage } from '@langchain/core/messages';
-import { Injectable, Logger } from '@nestjs/common';
+import { GoneException, Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 
@@ -45,6 +45,8 @@ export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
   private readonly httpClient: AxiosInstance | null;
   private readonly llmClient: ChatOpenAI | null;
+  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
+  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
@@ -479,7 +481,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
   /**
    * Extracts structured context from a free-form user query about finding influencers.
    *
-   * Uses OpenRouter with the `anthropic/claude-3.5-sonnet` model via LangChain.
+   * Uses OpenRouter with the `google/gemini-2.5-flash` model via LangChain.
    *
    * @param {string} query - The raw user query.
    *
@@ -495,7 +497,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
     }
     try {
       const client = new ChatOpenAI({
-        modelName: 'anthropic/claude-3.5-sonnet',
+        modelName: 'google/gemini-2.5-flash',
         openAIApiKey: this.openrouterConfig.apiKey,
         configuration: {
           baseURL: this.openrouterConfig.baseUrl,
@@ -530,7 +532,7 @@ User query: '${query}'`;
       const responseText = response.content as string;
 
       // Record token usage metrics (always record the call)
-      const model = 'anthropic/claude-3.5-sonnet';
+      const model = 'google/gemini-2.5-flash';
       this.metricsService.recordLLMCall(model, 'instagram_search_context');
       this.metricsService.recordLLMCallDuration(
         model,
@@ -619,7 +621,7 @@ User query: '${query}'`;
       };
     } catch (error) {
       this.metricsService.recordLLMError(
-        'anthropic/claude-3.5-sonnet',
+        'google/gemini-2.5-flash',
         'instagram_search_context',
         'api_error',
       );
@@ -891,7 +893,7 @@ User query: '${query}'`;
     }
 
     const client = new ChatOpenAI({
-      modelName: 'anthropic/claude-3.5-sonnet',
+      modelName: 'google/gemini-2.5-flash',
       openAIApiKey: this.openrouterConfig.apiKey,
       configuration: {
         baseURL: this.openrouterConfig.baseUrl,
@@ -969,7 +971,7 @@ Where:
         const responseText = response.content as string;
 
         // Record token usage metrics (always record the call)
-        const model = 'anthropic/claude-3.5-sonnet';
+        const model = 'google/gemini-2.5-flash';
         this.metricsService.recordLLMCall(model, 'instagram_profile_analysis');
         this.metricsService.recordLLMCallDuration(
           model,
@@ -1068,31 +1070,33 @@ Where:
         analyses.push(analysis);
 
         // Persist this profile immediately after analysis
-        try {
-          await this.searchProfilesRepo.createMany([
-            {
-              taskId,
-              account,
-              profileUrl,
-              followers,
-              isPrivate,
-              isBusinessAccount,
-              isProfessionalAccount,
-              analysisSummary: summary,
-              analysisScore: score,
-              raw: JSON.stringify(p),
-            },
-          ]);
-        } catch (saveError) {
-          this.logger.error(
-            `Failed to save InstagramSearchProfile for ${profileUrl}`,
-            saveError,
-          );
-          this.sentry.sendException(saveError, { profileUrl, taskId });
+        if (!InstagramService.SEARCH_PROFILES_DISABLED) {
+          try {
+            await this.searchProfilesRepo.createMany([
+              {
+                taskId,
+                account,
+                profileUrl,
+                followers,
+                isPrivate,
+                isBusinessAccount,
+                isProfessionalAccount,
+                analysisSummary: summary,
+                analysisScore: score,
+                raw: JSON.stringify(p),
+              },
+            ]);
+          } catch (saveError) {
+            this.logger.error(
+              `Failed to save InstagramSearchProfile for ${profileUrl}`,
+              saveError,
+            );
+            this.sentry.sendException(saveError, { profileUrl, taskId });
+          }
         }
       } catch (error) {
         this.metricsService.recordLLMError(
-          'anthropic/claude-3.5-sonnet',
+          'google/gemini-2.5-flash',
           'instagram_profile_analysis',
           'api_error',
         );
@@ -1397,6 +1401,15 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
    * @returns {Promise<string>} The task ID.
    */
   public async search(query: string): Promise<string> {
+    if (InstagramService.SEARCH_PROFILES_DISABLED) {
+      this.logger.warn(
+        `Instagram search requested while disabled. Query=${JSON.stringify(query)}`,
+      );
+      throw new GoneException(
+        'Instagram profile search is currently disabled.',
+      );
+    }
+
     const taskId = randomUUID();
 
     // Create task record in database
@@ -1417,6 +1430,31 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
 
     // Record task creation metric
     this.metricsService.recordTaskCreated('instagram_search');
+
+    return taskId;
+  }
+
+  /**
+   * Creates a new Instagram profile analysis job and queues it for processing.
+   */
+  public async profile(profile: string): Promise<string> {
+    const taskId = randomUUID();
+
+    await this.tasksRepo.create({
+      taskId,
+      status: TaskStatus.Pending,
+      result: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    });
+
+    await this.queueService.instagram.add('profile', {
+      taskId,
+      profile,
+    });
+
+    this.metricsService.recordTaskCreated('instagram_profile');
 
     return taskId;
   }

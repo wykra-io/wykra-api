@@ -64,7 +64,7 @@ services:
       BRIGHTDATA_TIMEOUT: ${BRIGHTDATA_TIMEOUT:-30000}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.5-flash}
       OPENROUTER_TIMEOUT: ${OPENROUTER_TIMEOUT:-60000}
     ports:
       - "${APP_PORT:-3000}:${APP_PORT:-3000}"
@@ -73,8 +73,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      grafana:
-        condition: service_started
     networks:
       - wykra-network
     volumes:
@@ -128,10 +126,10 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_SERVE_FROM_SUBPATH=true
-      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost/grafana}
-      - GF_SERVER_DOMAIN=${GRAFANA_DOMAIN:-localhost}
-    # Port not exposed - accessed via API proxy at /grafana
+      - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3001}
+      - PROMETHEUS_URL=http://prometheus:9090
+    ports:
+      - "0.0.0.0:${GRAFANA_PORT:-3001}:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

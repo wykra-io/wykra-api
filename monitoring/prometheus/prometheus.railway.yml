@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'wykra-api'
+    environment: 'production'
+
+# Load alert rules (rules will evaluate even if you don't run Alertmanager).
+rule_files:
+  - '/etc/prometheus/alerts.yml'
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Wykra API application
+  #
+  # Set API_METRICS_TARGET in Railway, e.g.:
+  # - "api:3000" (if Railway provides internal DNS by service name), or
+  # - "<your-api-private-domain>:3000", or
+  # - "<your-api-public-domain>:443" (only if /metrics is publicly reachable)
+  - job_name: 'wykra-api'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['__API_METRICS_TARGET__']
+        labels:
+          service: 'wykra-api'
+          environment: 'production'
+
+

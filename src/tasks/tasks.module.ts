@@ -40,5 +40,6 @@ import { TasksService } from './tasks.service';
       useExisting: MetricsService,
     },
   ],
+  exports: [TasksService],
 })
 export class TasksModule {}

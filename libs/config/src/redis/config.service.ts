@@ -16,7 +16,8 @@ export class RedisConfigService {
   }
 
   public get password(): string | undefined {
-    return this.config.get<string>('redis.pass');
+    const pass = this.config.get<string>('redis.pass');
+    return pass && pass.trim().length > 0 ? pass : undefined;
   }
 
   public get dbs(): RedisDbs {

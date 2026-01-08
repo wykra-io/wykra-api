@@ -39,6 +39,46 @@
 			"response": []
 		},
 		{
+			"name": "Profile analysis (queued)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{apiToken}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"profile\": \"username\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{apiUrl}}/api/v1/instagram/profile",
+					"host": [
+						"{{apiUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"instagram",
+						"profile"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Search profiles",
 			"request": {
 				"method": "POST",

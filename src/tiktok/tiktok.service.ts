@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { GoneException, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 
 import { BrightdataDataset } from '@libs/config';
@@ -31,6 +31,8 @@ export interface TikTokProfileAnalysis {
 @Injectable()
 export class TikTokService {
   private readonly logger = new Logger(TikTokService.name);
+  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
+  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   constructor(
     private readonly brightdata: TikTokBrightdataService,
@@ -127,20 +129,19 @@ export class TikTokService {
   }
 
   /**
-   * Discovers TikTok creator profiles by TikTok search URL using BrightData dataset mode:
+   * Discovers TikTok creator profiles by TikTok search URL(s) using BrightData dataset mode:
    * type=discover_new&discover_by=search_url
    */
   public async discoverProfilesBySearchUrl(
-    searchUrl: string,
+    searchUrls: string | string[],
     country = 'US',
   ): Promise<unknown[]> {
     try {
-      const triggerBody = [
-        {
-          search_url: searchUrl,
-          country,
-        },
-      ];
+      const urls = Array.isArray(searchUrls) ? searchUrls : [searchUrls];
+      const triggerBody = urls.map((url) => ({
+        search_url: url,
+        country,
+      }));
 
       return await this.brightdata.runDatasetAndDownload(
         BrightdataDataset.TIKTOK,
@@ -149,6 +150,7 @@ export class TikTokService {
           notify: 'false',
           type: 'discover_new',
           discover_by: 'search_url',
+          limit_per_input: '10',
         },
         'discover_by_search_url',
       );
@@ -157,7 +159,7 @@ export class TikTokService {
         'Error discovering TikTok profiles by search URL',
         error,
       );
-      this.sentry.sendException(error, { searchUrl, country });
+      this.sentry.sendException(error, { searchUrls, country });
       throw error;
     }
   }
@@ -225,25 +227,27 @@ export class TikTokService {
         });
 
         // Persist this profile immediately after analysis
-        try {
-          await this.searchProfilesRepo.createMany([
-            {
-              taskId,
-              account,
-              profileUrl,
-              followers,
-              isPrivate,
-              analysisSummary: summary,
-              analysisScore: score,
-              raw: JSON.stringify(p),
-            },
-          ]);
-        } catch (saveError) {
-          this.logger.error(
-            `Failed to save TikTokSearchProfile for ${profileUrl}`,
-            saveError,
-          );
-          this.sentry.sendException(saveError, { profileUrl, taskId });
+        if (!TikTokService.SEARCH_PROFILES_DISABLED) {
+          try {
+            await this.searchProfilesRepo.createMany([
+              {
+                taskId,
+                account,
+                profileUrl,
+                followers,
+                isPrivate,
+                analysisSummary: summary,
+                analysisScore: score,
+                raw: JSON.stringify(p),
+              },
+            ]);
+          } catch (saveError) {
+            this.logger.error(
+              `Failed to save TikTokSearchProfile for ${profileUrl}`,
+              saveError,
+            );
+            this.sentry.sendException(saveError, { profileUrl, taskId });
+          }
         }
       } catch (error) {
         this.logger.error(
@@ -375,6 +379,13 @@ export class TikTokService {
    * Creates a new TikTok search job and queues it for processing.
    */
   public async search(query: string): Promise<string> {
+    if (TikTokService.SEARCH_PROFILES_DISABLED) {
+      this.logger.warn(
+        `TikTok search requested while disabled. Query=${JSON.stringify(query)}`,
+      );
+      throw new GoneException('TikTok profile search is currently disabled.');
+    }
+
     const taskId = randomUUID();
 
     await this.tasksRepo.create({

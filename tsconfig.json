@@ -39,6 +39,6 @@
       "@libs/queue/*": ["libs/queue/src/*"]
     }
   },
-  "exclude": ["node_modules", "dist", "build", "test"]
+  "exclude": ["node_modules", "dist", "build", "test", "apps/**"]
 }
 
