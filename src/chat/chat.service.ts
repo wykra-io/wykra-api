@@ -107,7 +107,12 @@ Detection rules:
 - If the query is not about Instagram or TikTok, use [DETECTED_ENDPOINT: none]
 
 When users ask about Instagram or TikTok, be helpful and explain what they can do with these endpoints.
-Provide clear, concise responses.`;
+Provide clear, concise responses.
+
+IMPORTANT formatting rules:
+- Never use "*" symbols for lists
+- Always use numbered lists (1., 2., 3., etc.) when providing examples or lists
+- Format example lists as: "1. First example" "2. Second example" etc.`;
   }
 
   private normalizeLLMContent(content: unknown): string {
