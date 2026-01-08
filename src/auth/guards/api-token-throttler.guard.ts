@@ -29,6 +29,18 @@ export class ApiTokenThrottlerGuard extends ThrottlerGuard {
     );
     if (skipThrottle) return true;
 
+    // Never throttle Prometheus scraping from Railway internal network.
+    const req = context.switchToHttp().getRequest();
+    const url: string = req?.originalUrl || req?.url || '';
+    if (url === '/metrics' || url.startsWith('/metrics?')) {
+      const rawHost: string =
+        req?.headers?.['x-forwarded-host'] || req?.headers?.host || '';
+      const host = String(rawHost).split(',')[0]?.trim().split(':')[0] || '';
+      if (host.endsWith('.railway.internal')) {
+        return true;
+      }
+    }
+
     return super.shouldSkip(context);
   }
 
