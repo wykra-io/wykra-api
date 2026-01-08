@@ -15,8 +15,25 @@ export class MetricsInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
     const response = context.switchToHttp().getResponse();
-    const { method, route } = request;
-    const routePath = route?.path || request.url;
+    const method: string = request.method;
+
+    // Prefer Express' templated route (request.baseUrl + request.route.path) so we don't end up
+    // with per-request cardinality (e.g. querystrings) and we keep controller prefixes.
+    const baseUrl: string = request.baseUrl || '';
+    const expressRoutePath: unknown = request.route?.path;
+
+    let routePath: string;
+    if (typeof expressRoutePath === 'string') {
+      routePath = `${baseUrl}${expressRoutePath}`;
+    } else {
+      routePath = (request.originalUrl || request.url || '').toString();
+    }
+
+    // Strip query string and normalize trailing slash (except for root).
+    routePath = routePath.split('?')[0] || routePath;
+    if (routePath.length > 1 && routePath.endsWith('/')) {
+      routePath = routePath.slice(0, -1);
+    }
 
     const startTime = Date.now();
 

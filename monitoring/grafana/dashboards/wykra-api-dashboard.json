@@ -434,6 +434,64 @@
           "datasource": {"uid": "Prometheus", "type": "prometheus"}
         }
       ]
+    },
+    {
+      "title": "Chat Request Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 128},
+      "targets": [
+        {
+          "expr": "sum by (method, route) (rate(http_requests_total{route=~\".*/chat(/.*)?$\"}[5m]))",
+          "legendFormat": "{{method}} {{route}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Chat Error Rate (4xx/5xx)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 128},
+      "targets": [
+        {
+          "expr": "sum by (status, route) (rate(http_requests_total{route=~\".*/chat(/.*)?$\", status=~\"4..\"}[5m]))",
+          "legendFormat": "4xx {{route}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        },
+        {
+          "expr": "sum by (status, route) (rate(http_requests_total{route=~\".*/chat(/.*)?$\", status=~\"5..\"}[5m]))",
+          "legendFormat": "5xx {{route}}",
+          "refId": "B",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Chat Latency p95",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 136},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket{route=~\".*/chat(/.*)?$\"}[5m])))",
+          "legendFormat": "p95 {{route}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
+    },
+    {
+      "title": "Chat Latency (Average)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 136},
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(http_request_duration_seconds_sum{route=~\".*/chat(/.*)?$\"}[5m])) / sum by (route) (rate(http_request_duration_seconds_count{route=~\".*/chat(/.*)?$\"}[5m]))",
+          "legendFormat": "avg {{route}}",
+          "refId": "A",
+          "datasource": {"uid": "Prometheus", "type": "prometheus"}
+        }
+      ]
     }
   ]
 }

@@ -329,8 +329,101 @@ Provide clear, concise responses.`;
         new HumanMessage(dto.query),
       ];
 
-      const response = await llmClient.invoke(messages);
-      const content = response.content as string;
+      const llmStartTime = Date.now();
+      const model =
+        this.openrouterConfig.model || this.defaultModel || 'unknown';
+      const llmServiceLabel = 'chat_assistant';
+
+      type LLMInvokeResponse = {
+        content?: unknown;
+        response_metadata?: {
+          tokenUsage?: {
+            promptTokens?: unknown;
+            completionTokens?: unknown;
+            totalTokens?: unknown;
+          };
+          usage?: {
+            prompt_tokens?: unknown;
+            completion_tokens?: unknown;
+            total_tokens?: unknown;
+          };
+        };
+        usage_metadata?: {
+          input_tokens?: unknown;
+          output_tokens?: unknown;
+          total_tokens?: unknown;
+        };
+      };
+
+      let response: LLMInvokeResponse;
+      try {
+        response = (await llmClient.invoke(messages)) as unknown as LLMInvokeResponse;
+        const llmDuration = (Date.now() - llmStartTime) / 1000;
+
+        // Always record the call + duration
+        this.metricsService.recordLLMCall(model, llmServiceLabel);
+        this.metricsService.recordLLMCallDuration(
+          model,
+          llmServiceLabel,
+          llmDuration,
+          'success',
+        );
+
+        // Extract usage from multiple possible locations
+        let promptTokens = 0;
+        let completionTokens = 0;
+        let totalTokens = 0;
+
+        // Check response_metadata.tokenUsage (camelCase - Anthropic format)
+        if (response.response_metadata?.tokenUsage) {
+          const tokenUsage = response.response_metadata.tokenUsage;
+          promptTokens = Number(tokenUsage.promptTokens) || 0;
+          completionTokens = Number(tokenUsage.completionTokens) || 0;
+          totalTokens = Number(tokenUsage.totalTokens) || 0;
+        }
+        // Check usage_metadata (snake_case - LangChain format)
+        else if (response.usage_metadata) {
+          promptTokens = Number(response.usage_metadata.input_tokens) || 0;
+          completionTokens = Number(response.usage_metadata.output_tokens) || 0;
+          totalTokens = Number(response.usage_metadata.total_tokens) || 0;
+        }
+        // Fallback: check response_metadata.usage (snake_case - OpenAI format)
+        else if (response.response_metadata?.usage) {
+          const usage = response.response_metadata.usage;
+          promptTokens = Number(usage.prompt_tokens) || 0;
+          completionTokens = Number(usage.completion_tokens) || 0;
+          totalTokens = Number(usage.total_tokens) || 0;
+        }
+
+        // Record token usage metrics (even if usage is missing → 0s)
+        this.metricsService.recordLLMTokenUsage(
+          model,
+          llmServiceLabel,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+        );
+        this.metricsService.recordLLMTokensPerRequest(
+          'chat',
+          promptTokens,
+          completionTokens,
+        );
+      } catch (error) {
+        const llmDuration = (Date.now() - llmStartTime) / 1000;
+        this.metricsService.recordLLMCall(model, llmServiceLabel);
+        this.metricsService.recordLLMCallDuration(
+          model,
+          llmServiceLabel,
+          llmDuration,
+          'error',
+        );
+        this.metricsService.recordLLMError(model, llmServiceLabel, 'api_error');
+        throw error;
+      }
+      const content =
+        typeof response.content === 'string'
+          ? response.content
+          : String(response.content ?? '');
 
       const detectedEndpoint = this.extractDetectedEndpoint(content);
 
