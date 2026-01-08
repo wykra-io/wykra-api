@@ -1,6 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage } from '@langchain/core/messages';
-import { Injectable, Logger } from '@nestjs/common';
+import { GoneException, Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 
@@ -45,6 +45,8 @@ export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
   private readonly httpClient: AxiosInstance | null;
   private readonly llmClient: ChatOpenAI | null;
+  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
+  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
@@ -1068,27 +1070,29 @@ Where:
         analyses.push(analysis);
 
         // Persist this profile immediately after analysis
-        try {
-          await this.searchProfilesRepo.createMany([
-            {
-              taskId,
-              account,
-              profileUrl,
-              followers,
-              isPrivate,
-              isBusinessAccount,
-              isProfessionalAccount,
-              analysisSummary: summary,
-              analysisScore: score,
-              raw: JSON.stringify(p),
-            },
-          ]);
-        } catch (saveError) {
-          this.logger.error(
-            `Failed to save InstagramSearchProfile for ${profileUrl}`,
-            saveError,
-          );
-          this.sentry.sendException(saveError, { profileUrl, taskId });
+        if (!InstagramService.SEARCH_PROFILES_DISABLED) {
+          try {
+            await this.searchProfilesRepo.createMany([
+              {
+                taskId,
+                account,
+                profileUrl,
+                followers,
+                isPrivate,
+                isBusinessAccount,
+                isProfessionalAccount,
+                analysisSummary: summary,
+                analysisScore: score,
+                raw: JSON.stringify(p),
+              },
+            ]);
+          } catch (saveError) {
+            this.logger.error(
+              `Failed to save InstagramSearchProfile for ${profileUrl}`,
+              saveError,
+            );
+            this.sentry.sendException(saveError, { profileUrl, taskId });
+          }
         }
       } catch (error) {
         this.metricsService.recordLLMError(
@@ -1397,6 +1401,15 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
    * @returns {Promise<string>} The task ID.
    */
   public async search(query: string): Promise<string> {
+    if (InstagramService.SEARCH_PROFILES_DISABLED) {
+      this.logger.warn(
+        `Instagram search requested while disabled. Query=${JSON.stringify(query)}`,
+      );
+      throw new GoneException(
+        'Instagram profile search is currently disabled.',
+      );
+    }
+
     const taskId = randomUUID();
 
     // Create task record in database

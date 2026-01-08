@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, GoneException } from '@nestjs/common';
 
 import { SearchPostDto, TikTokProfileDTO } from './dto';
 import { TikTokService } from './tiktok.service';
@@ -6,6 +6,9 @@ import { TikTokService } from './tiktok.service';
 @Controller('tiktok')
 export class TikTokController {
   constructor(private readonly tiktokService: TikTokService) {}
+
+  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
+  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   /**
    * Creates a new TikTok profile analysis task (queued).
@@ -33,6 +36,12 @@ export class TikTokController {
     if (!dto.query || typeof dto.query !== 'string') {
       throw new Error('Query must be a non-empty string');
     }
+
+    if (TikTokController.SEARCH_PROFILES_DISABLED) {
+      // Previously: const taskId = await this.tiktokService.search(dto.query);
+      throw new GoneException('TikTok profile search is currently disabled.');
+    }
+
     const taskId = await this.tiktokService.search(dto.query);
     return { taskId };
   }

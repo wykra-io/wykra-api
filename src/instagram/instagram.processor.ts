@@ -32,6 +32,8 @@ interface InstagramProfileJobData {
 @Processor(QueueName.Instagram)
 export class InstagramProcessor {
   private readonly logger = new Logger(InstagramProcessor.name);
+  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
+  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   constructor(
     private readonly tasksRepo: TasksRepository,
@@ -64,6 +66,22 @@ export class InstagramProcessor {
     );
 
     try {
+      if (InstagramProcessor.SEARCH_PROFILES_DISABLED) {
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Failed,
+          error: 'Instagram profile search is currently disabled.',
+          completedAt: new Date(),
+        });
+        this.metricsService.recordTaskStatusChange(
+          'failed',
+          'instagram_search',
+        );
+        this.logger.warn(
+          `Instagram search task ${taskId} skipped (disabled). Query: ${query}`,
+        );
+        return;
+      }
+
       // Update task status to running
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,

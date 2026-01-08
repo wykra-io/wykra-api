@@ -1,4 +1,4 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, GoneException } from '@nestjs/common';
 
 import { InstagramProfileDTO, SearchPostDto } from './dto';
 import { InstagramService } from './instagram.service';
@@ -6,6 +6,9 @@ import { InstagramService } from './instagram.service';
 @Controller('instagram')
 export class InstagramController {
   constructor(private readonly instagramService: InstagramService) {}
+
+  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
+  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   /**
    * Creates a new Instagram profile analysis task (queued).
@@ -34,6 +37,14 @@ export class InstagramController {
     if (!dto.query || typeof dto.query !== 'string') {
       throw new Error('Query must be a non-empty string');
     }
+
+    if (InstagramController.SEARCH_PROFILES_DISABLED) {
+      // Previously: const taskId = await this.instagramService.search(dto.query);
+      throw new GoneException(
+        'Instagram profile search is currently disabled.',
+      );
+    }
+
     const taskId = await this.instagramService.search(dto.query);
     return { taskId };
   }
