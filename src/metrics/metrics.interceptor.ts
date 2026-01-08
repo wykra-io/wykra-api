@@ -17,8 +17,6 @@ export class MetricsInterceptor implements NestInterceptor {
     const response = context.switchToHttp().getResponse();
     const method: string = request.method;
 
-    // Prefer Express' templated route (request.baseUrl + request.route.path) so we don't end up
-    // with per-request cardinality (e.g. querystrings) and we keep controller prefixes.
     const baseUrl: string = request.baseUrl || '';
     const expressRoutePath: unknown = request.route?.path;
 
