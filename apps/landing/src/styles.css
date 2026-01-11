@@ -24,7 +24,7 @@ body {
 .page {
   min-height: 100vh;
   background: white;
-  color: var(--wykra-text);
+  color: #0f172a;
   display: flex;
   flex-direction: column;
 }
@@ -253,7 +253,7 @@ body {
   margin: 0;
   font-size: 18px;
   line-height: 1.6;
-  color: rgba(79, 47, 148, 0.78);
+  color: #334155;
   max-width: 720px;
 }
 
@@ -275,12 +275,11 @@ body {
 
 .secondaryBtn {
   text-decoration: none;
-  background: white;
-  color: var(--wykra-theme);
+  background: var(--wykra-theme);
+  color: white;
   padding: 12px 16px;
   border-radius: 12px;
   font-weight: 900;
-  border: 1px solid rgba(66, 46, 99, 0.28);
 }
 
 .primaryBtn:hover,
@@ -312,7 +311,7 @@ body {
 .featureKicker {
   display: block;
   font-weight: 900;
-  color: var(--wykra-theme);
+  color: var(--wykra-text);
   font-size: 12px;
   letter-spacing: 0.01em;
 }
@@ -321,7 +320,7 @@ body {
   display: block;
   margin-top: 3px;
   font-weight: 800;
-  color: rgba(79, 47, 148, 0.9);
+  color: #0f172a;
   font-size: 13px;
 }
 
@@ -354,7 +353,7 @@ body {
 
 .cardSubtitle {
   font-weight: 700;
-  opacity: 0.75;
+  color: #475569;
   font-size: 13px;
 }
 
@@ -369,7 +368,7 @@ body {
   border: 1px solid rgba(66, 46, 99, 0.14);
   background: white;
   padding: 12px 14px;
-  color: var(--wykra-text);
+  color: #0f172a;
   font-weight: 800;
 }
 
@@ -383,7 +382,7 @@ body {
   gap: 10px;
   flex-wrap: wrap;
   flex-shrink: 0;
-  color: rgba(79, 47, 148, 0.62);
+  color: #64748b;
   font-size: 13px;
   font-weight: 700;
   position: relative;
@@ -408,7 +407,7 @@ body {
 }
 
 .footer a {
-  color: rgba(79, 47, 148, 0.72);
+  color: #334155;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -417,7 +416,7 @@ body {
 }
 
 .footer a:hover {
-  color: var(--wykra-theme);
+  color: #0f172a;
 }
 
 .footerDevLink {
@@ -430,7 +429,7 @@ body {
 }
 
 .footerSep {
-  color: rgba(66, 46, 99, 0.26);
+  color: #cbd5e1;
 }
 
 .devIconRect {
