@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import type { MeResponse } from '../types';
+import { WykraLogo } from './WykraLogo';
 
 type Props = {
   isAuthed: boolean;
@@ -22,7 +23,8 @@ export function Topbar({
   return (
     <div className="topbar">
       <div className="brand">
-        <h1 style={{ margin: 0 }}>Wykra</h1>
+        <WykraLogo size={56} className="brandLogo" />
+        <span className="brandText">Wykra</span>
       </div>
       <div className="topbarRight">
         {!isAuthed ? (

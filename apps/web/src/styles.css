@@ -29,6 +29,26 @@ body {
   gap: 12px;
 }
 
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brandLogo {
+  display: block;
+  flex-shrink: 0;
+}
+
+.brandText {
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  line-height: 1;
+}
+
 .topbarRight {
   display: flex;
   align-items: center;
