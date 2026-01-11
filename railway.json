@@ -7,6 +7,9 @@
     "web": {
       "root": "apps/web"
     },
+    "landing": {
+      "root": "apps/landing"
+    },
     "grafana": {
       "root": "apps/grafana"
     },

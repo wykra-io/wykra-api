@@ -82,3 +82,4 @@ dist/
 *.pid.lock
 
 apps/web/node_modules
+apps/landing/node_modules
