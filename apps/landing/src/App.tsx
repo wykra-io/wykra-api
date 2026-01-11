@@ -32,10 +32,10 @@ export function App() {
             </p>
 
             <div className="actions">
-              <a className="primaryBtn" href="https://t.me/">
+              <a className="primaryBtn" href="https://t.me/wykra_bot">
                 Start in Telegram
               </a>
-              <a className="secondaryBtn" href="https://app.wykra.ai">
+              <a className="secondaryBtn" href="https://app.wykra.io">
                 Open Web App
               </a>
             </div>
