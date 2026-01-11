@@ -1,6 +1,8 @@
 :root {
   --wykra-text: #4f2f94;
   --wykra-theme: #422e63;
+  --wykra-brand-font: 'Nunito', ui-sans-serif, system-ui, -apple-system, Segoe UI,
+    Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
   color-scheme: light;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
     Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
@@ -42,15 +44,17 @@ body {
 
 .brand {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
 }
 
 .brandText {
-  font-weight: 900;
-  letter-spacing: -0.02em;
+  font-family: var(--wykra-brand-font);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-top: -10px;
   color: var(--wykra-text);
-  font-size: 20px;
+  font-size: 21px;
 }
 
 .cta {
@@ -441,6 +445,15 @@ body {
 }
 
 @media (max-width: 540px) {
+  .header {
+    justify-content: center;
+  }
+
+  .brand img {
+    width: 96px !important;
+    height: 96px !important;
+  }
+
   .footerCopyright {
     position: static;
     transform: none;
