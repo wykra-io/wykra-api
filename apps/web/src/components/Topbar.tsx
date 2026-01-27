@@ -23,13 +23,12 @@ export function Topbar({
   return (
     <div className="topbar">
       <div className="brand">
-        <WykraLogo size={56} className="brandLogo" />
-        <span className="brandText">Wykra</span>
+        <WykraLogo size={48} className="brandLogo" />
       </div>
       <div className="topbarRight">
         {!isAuthed ? (
           hideSignIn ? null : (
-            <button className="secondary" onClick={onOpenSignIn}>
+            <button className="primaryBtn" onClick={onOpenSignIn}>
               Sign in
             </button>
           )

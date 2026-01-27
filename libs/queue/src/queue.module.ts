@@ -40,15 +40,12 @@ import { QueueService } from './queue.service';
           }
 
           return config.isCluster
-            ? new Redis.Cluster(
-                [{ host: config.host, port: config.port }],
-                {
-                  ...opts,
-                  redisOptions: {
-                    password: config.password,
-                  },
+            ? new Redis.Cluster([{ host: config.host, port: config.port }], {
+                ...opts,
+                redisOptions: {
+                  password: config.password,
                 },
-              )
+              })
             : new Redis(opts);
         },
       }),

@@ -13,5 +13,3 @@ export class TelegramConfigService {
     return this.config.getOrThrow<string>('telegram.hmacKey');
   }
 }
-
-

@@ -10,11 +10,11 @@ import {
 } from '@libs/repositories';
 
 import { MetricsModule, MetricsService } from '../metrics';
-import { PerplexityModule } from '../perplexity';
 
 import { InstagramController } from './instagram.controller';
 import { InstagramProcessor } from './instagram.processor';
 import { InstagramService } from './instagram.service';
+import { InstagramWebSearchService } from './instagram-web-search.service';
 
 @Module({
   imports: [
@@ -23,11 +23,11 @@ import { InstagramService } from './instagram.service';
     QueueModule,
     TypeOrmModule.forFeature([Task, InstagramSearchProfile]),
     MetricsModule,
-    PerplexityModule,
   ],
   controllers: [InstagramController],
   providers: [
     InstagramService,
+    InstagramWebSearchService,
     InstagramProcessor,
     TasksRepository,
     InstagramSearchProfilesRepository,

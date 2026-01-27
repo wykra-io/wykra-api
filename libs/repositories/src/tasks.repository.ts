@@ -2,7 +2,7 @@ import { Injectable, Inject, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { Task } from '@libs/entities';
+import { Task, TaskStatus } from '@libs/entities';
 
 // Make MetricsService optional to avoid circular dependency issues
 interface IMetricsService {
@@ -59,6 +59,23 @@ export class TasksRepository {
       this.metrics?.recordDbQuery('update', 'Task', duration);
     } catch (error) {
       this.metrics?.recordDbQueryError('update', 'Task', 'update_error');
+      throw error;
+    }
+  }
+
+  public async findRecentCompleted(limit: number): Promise<Task[]> {
+    const startTime = Date.now();
+    try {
+      const result = await this.repository.find({
+        where: { status: TaskStatus.Completed },
+        order: { completedAt: 'DESC' },
+        take: limit,
+      });
+      const duration = (Date.now() - startTime) / 1000;
+      this.metrics?.recordDbQuery('find', 'Task', duration);
+      return result;
+    } catch (error) {
+      this.metrics?.recordDbQueryError('find', 'Task', 'query_error');
       throw error;
     }
   }

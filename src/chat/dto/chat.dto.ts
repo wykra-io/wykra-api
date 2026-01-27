@@ -5,4 +5,3 @@ export class ChatDTO {
   @IsString()
   query!: string;
 }
-

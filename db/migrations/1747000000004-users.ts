@@ -72,5 +72,3 @@ export class Users1747000000004 implements MigrationInterface {
     await queryRunner.dropTable(this._tableName);
   }
 }
-
-

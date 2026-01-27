@@ -3,7 +3,7 @@ export function Footer() {
     <footer className="footer">
       <div className="footerLeft"></div>
       <span className="footerCopyright">
-        © 2026 Wykra. All rights reserved.
+        © {new Date().getFullYear()} Wykra. All rights reserved.
       </span>
       <span className="footerLinks" aria-label="Footer links">
         <a
@@ -39,14 +39,14 @@ export function Footer() {
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <rect width="20" height="20" rx="4" fill="#000000" />
+            <rect className="devIconRect" width="20" height="20" rx="4" />
             <text
               x="10"
               y="10"
               fontFamily="Arial, sans-serif"
               fontSize="9"
               fontWeight="bold"
-              fill="#FFFFFF"
+              className="devIconText"
               textAnchor="middle"
               dominantBaseline="middle"
             >

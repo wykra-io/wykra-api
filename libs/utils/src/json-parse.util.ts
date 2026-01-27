@@ -1,6 +1,9 @@
 export type JsonTextShape = 'object' | 'array';
 
-function extractFirstJsonSlice(text: string, shape: JsonTextShape): string | null {
+function extractFirstJsonSlice(
+  text: string,
+  shape: JsonTextShape,
+): string | null {
   if (typeof text !== 'string' || text.length === 0) {
     return null;
   }
@@ -30,4 +33,3 @@ export function safeJsonParseFromText<T>(
     return null;
   }
 }
-

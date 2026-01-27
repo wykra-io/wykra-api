@@ -25,7 +25,7 @@ export function ChatView({
   onSubmit,
 }: Props) {
   return (
-    <div className="card" style={{ marginTop: 24, flex: 1, minHeight: 0 }}>
+    <div className="card" style={{ flex: 1, minHeight: 0 }}>
       <div className="chatContainer">
         <div className="chatMessages">
           {messages.length === 0 ? (
@@ -66,7 +66,9 @@ export function ChatView({
               }`}
             >
               {chatSending || !!activeTaskId ? (
-                <div className="chatSendButtonSpinner" />
+                <span className="chatSendButtonDots" aria-hidden="true">
+                  ...
+                </span>
               ) : (
                 <svg
                   width="18"

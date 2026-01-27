@@ -1,11 +1,15 @@
 :root {
+  --wykra-text: #4f2f94;
+  --wykra-theme: #422e63;
+  --wykra-brand-font: 'Nunito', ui-sans-serif, system-ui, -apple-system, Segoe UI,
+    Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
   color-scheme: light;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
     Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
   line-height: 1.5;
   font-weight: 400;
   color: #0f172a;
-  background: #f8fafc;
+  background: white;
 }
 
 * {
@@ -16,24 +20,129 @@ html,
 body {
   margin: 0;
   height: 100%;
+  background: white;
+  overflow: hidden;
 }
 
 #root {
   height: 100%;
 }
 
+.page {
+  height: 100vh;
+  background: white;
+  color: #0f172a;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  padding: 12px 0;
+  width: 100%;
+  border-bottom: 1px solid #e2e8f0;
+  background: white;
+}
+
+.headerInner {
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.main {
+  flex: 1;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+  overflow: hidden;
+  gap: 0;
+}
+
+.mainInner {
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 20px;
+}
+
+.sideMenu {
+  width: 240px;
+  flex-shrink: 0;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sideMenuNav {
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sideMenuSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.sideMenuTitle {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  padding: 12px 12px 8px 12px;
+  margin-bottom: 4px;
+}
+
+.sideMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  color: #0f172a;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background-color 0.15s;
+}
+
+.sideMenuItem:hover {
+  background: #f1f5f9;
+}
+
+.sideMenuItem svg {
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+.sideMenuItem:hover svg {
+  color: #0f172a;
+}
+
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
 }
 
 .brandLogo {
@@ -42,11 +151,12 @@ body {
 }
 
 .brandText {
-  font-weight: 900;
-  font-size: 22px;
-  letter-spacing: -0.02em;
-  color: #0f172a;
-  line-height: 1;
+  font-family: var(--wykra-brand-font);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-top: -10px;
+  color: var(--wykra-text);
+  font-size: 21px;
 }
 
 .topbarRight {
@@ -135,8 +245,8 @@ body {
 
 .footer {
   margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid #e2e8f0;
+  padding: 18px 20px;
+  border-top: 1px solid rgba(66, 46, 99, 0.14);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -145,6 +255,7 @@ body {
   flex-shrink: 0;
   color: #64748b;
   font-size: 13px;
+  font-weight: 700;
   position: relative;
 }
 
@@ -172,7 +283,6 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s;
 }
 
 .footer a:hover {
@@ -180,26 +290,125 @@ body {
 }
 
 .footerDevLink {
-  transition: opacity 0.2s;
+  color: var(--wykra-theme);
 }
 
 .footerDevLink:hover {
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .footerSep {
   color: #cbd5e1;
 }
 
+.devIconRect {
+  fill: currentColor;
+}
+
+.devIconText {
+  fill: #ffffff;
+}
+
+.authCard {
+  flex: 1;
+  border-radius: 18px;
+  border: 1px solid rgba(66, 46, 99, 0.18);
+  background: linear-gradient(
+    180deg,
+    rgba(66, 46, 99, 0.08),
+    rgba(66, 46, 99, 0.02)
+  );
+  padding: 40px 22px;
+  margin: 40px 0;
+  box-shadow: 0 24px 60px rgba(66, 46, 99, 0.1);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.title {
+  margin: 0 0 10px 0;
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--wykra-text);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.6;
+  color: #334155;
+  max-width: 720px;
+}
+
+.actions {
+  margin-top: 22px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.primaryBtn {
+  text-decoration: none;
+  background: var(--wykra-theme);
+  color: white;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-weight: 900;
+  border: 0;
+}
+
+.primaryBtn:hover {
+  filter: brightness(1.03);
+}
+
+@media (max-width: 540px) {
+  .header {
+    padding: 12px 18px;
+  }
+
+  .topbar {
+    justify-content: center;
+  }
+
+  .brand img {
+    width: 96px !important;
+    height: 96px !important;
+  }
+
+  .sideMenu {
+    display: none;
+  }
+
+  .footerCopyright {
+    position: static;
+    transform: none;
+    order: 2;
+    width: 100%;
+    text-align: center;
+  }
+  .footerLeft {
+    display: none;
+  }
+  .footerLinks {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .card {
   background: white;
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 0;
+  padding: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  border-left: none;
+  border-right: none;
 }
 
 .grid {
@@ -339,8 +548,8 @@ pre {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
   background: white;
 }
@@ -348,11 +557,13 @@ pre {
 .chatMessages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   background: #f8fafc;
+  min-width: 0;
 }
 
 .chatEmpty {
@@ -366,18 +577,7 @@ pre {
 .chatMessage {
   display: flex;
   max-width: 80%;
-  animation: fadeIn 0.2s ease-in;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  min-width: 0;
 }
 
 .chatMessageUser {
@@ -393,7 +593,13 @@ pre {
   padding: 12px 16px;
   border-radius: 12px;
   word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
   line-height: 1.5;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .chatMessageUser .chatMessageContent {
@@ -435,21 +641,6 @@ pre {
 
 .chatLoading::after {
   content: '...';
-  animation: dots 1.5s steps(4, end) infinite;
-}
-
-@keyframes dots {
-  0%,
-  20% {
-    content: '.';
-  }
-  40% {
-    content: '..';
-  }
-  60%,
-  100% {
-    content: '...';
-  }
 }
 
 .chatTaskSpinner {
@@ -459,13 +650,6 @@ pre {
   border: 2px solid rgba(0, 0, 0, 0.1);
   border-top-color: currentColor;
   border-radius: 50%;
-  animation: chatTaskSpinner 0.6s linear infinite;
-}
-
-@keyframes chatTaskSpinner {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .profileCard {
@@ -526,7 +710,6 @@ pre {
 .profileCardLink {
   color: #0f172a;
   text-decoration: none;
-  transition: color 0.2s;
 }
 
 .profileCardLink:hover {
@@ -641,19 +824,137 @@ pre {
   background: #0f172a;
 }
 
-.chatSendButtonSpinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: chatSendButtonSpinner 0.6s linear infinite;
+.chatSendButtonDots {
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1;
 }
 
-@keyframes chatSendButtonSpinner {
-  to {
-    transform: rotate(360deg);
-  }
+/* Instagram Search Results Styles */
+.instagramSearchResults {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.instagramSearchHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.instagramSearchQuery {
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.5;
+}
+
+.instagramSearchQuery strong {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.instagramSearchContext {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.instagramSearchTag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.instagramSearchProfiles {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.instagramSearchEmpty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.instagramSearchProfile {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.instagramSearchProfile:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.instagramSearchProfileHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.instagramSearchProfileInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.instagramSearchProfileLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #0f172a;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 14px;
+  transition: color 0.15s;
+}
+
+.instagramSearchProfileLink:hover {
+  color: #3b82f6;
+}
+
+.instagramSearchProfileLink svg {
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+.instagramSearchProfileLink:hover svg {
+  color: #3b82f6;
+}
+
+.instagramSearchProfileScore {
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.instagramSearchProfileSummary {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
 }
 
 

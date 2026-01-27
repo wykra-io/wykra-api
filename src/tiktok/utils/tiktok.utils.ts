@@ -1,12 +1,13 @@
 export function normalizeTikTokProfileUrl(profileOrUrl: string): string {
-  const trimmed = (profileOrUrl || '').trim();
+  const trimmedRaw = String(profileOrUrl ?? '').trim();
+  const trimmed = trimmedRaw.replace(/[)\]}>,.!?:;"'`]+$/g, '');
   if (!trimmed) {
     return 'https://www.tiktok.com/@';
   }
 
   // If it already has a scheme, assume it's a URL
   if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
+    return trimmed.replace(/[)\]}>,.!?:;"'`]+$/g, '');
   }
 
   // If user pasted a URL without scheme
@@ -20,6 +21,8 @@ export function normalizeTikTokProfileUrl(profileOrUrl: string): string {
     handle = handle.slice(1);
   }
   handle = handle.replace(/^tiktok\.com\/@/i, '');
+  handle = handle.split(/[/?#\s]/)[0] ?? '';
+  handle = handle.replace(/[)\]}>,.!?:;"'`]+$/g, '');
   return `https://www.tiktok.com/@${handle}`;
 }
 

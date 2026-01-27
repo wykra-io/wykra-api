@@ -8,7 +8,7 @@ export class TikTokController {
   constructor(private readonly tiktokService: TikTokService) {}
 
   // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
-  private static readonly SEARCH_PROFILES_DISABLED = true;
+  private static readonly SEARCH_PROFILES_DISABLED = false;
 
   /**
    * Creates a new TikTok profile analysis task (queued).

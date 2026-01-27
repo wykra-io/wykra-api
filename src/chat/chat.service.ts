@@ -17,21 +17,25 @@ import { TikTokService } from '../tiktok';
 import { ChatDTO } from './dto';
 import { ChatResponse } from './interfaces';
 
-type ChatEndpoint = '/instagram/analysis' | '/tiktok/profile';
+type ChatEndpoint =
+  | '/instagram/analysis'
+  | '/instagram/search'
+  | '/tiktok/profile'
+  | '/tiktok/search';
 
 type EndpointParams = { query?: string; profile?: string };
 
 const DETECTED_ENDPOINT_FULLPATH_RE =
-  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|tiktok\/profile))\s*\]/i;
+  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search))\s*\]/i;
 const DETECTED_ENDPOINT_JSON_RE =
-  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile))"[\s\S]*\}/;
+  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search))"[\s\S]*\}/;
 const DETECTED_ENDPOINT_ALLOWED_RE =
-  /^\/(?:instagram\/analysis|tiktok\/profile)$/;
+  /^\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search)$/;
 
 const STRIP_DETECTED_ENDPOINT_MARKER_RE =
-  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|tiktok\/profile)|none)\s*\]/gi;
+  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search)|none)\s*\]/gi;
 const STRIP_DETECTED_ENDPOINT_JSON_RE =
-  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile)|none)"[\s\S]*\}/;
+  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search)|none)"[\s\S]*\}/;
 const STRIP_DETECTED_ENDPOINT_PLATFORM_MARKER_RE =
   /\[DETECTED_ENDPOINT:\s*(instagram|tiktok|none)\]/gi;
 
@@ -95,14 +99,18 @@ export class ChatService {
 You help users interact with social media analysis tools for Instagram and TikTok.
 
 Available endpoints:
+- /instagram/search - Search for Instagram creators (POST, requires query parameter)
 - /instagram/analysis - Analyze a specific Instagram profile (POST, requires profile parameter)
+- /tiktok/search - Search for TikTok creators (POST, requires query parameter)
 - /tiktok/profile - Analyze a specific TikTok profile (POST, requires profile parameter)
 
 IMPORTANT: At the end of your response, you MUST include endpoint detection information in this exact format:
-[DETECTED_ENDPOINT: /instagram/analysis] or [DETECTED_ENDPOINT: /tiktok/profile] or [DETECTED_ENDPOINT: none]
+[DETECTED_ENDPOINT: /instagram/search] or [DETECTED_ENDPOINT: /instagram/analysis] or [DETECTED_ENDPOINT: /tiktok/search] or [DETECTED_ENDPOINT: /tiktok/profile] or [DETECTED_ENDPOINT: none]
 
 Detection rules:
+- If the user wants to search/discover creators on Instagram, use [DETECTED_ENDPOINT: /instagram/search]
 - If the user wants to analyze a specific Instagram profile/account, use [DETECTED_ENDPOINT: /instagram/analysis]
+- If the user wants to search/discover creators on TikTok, use [DETECTED_ENDPOINT: /tiktok/search]
 - If the user wants to analyze a specific TikTok profile/account, use [DETECTED_ENDPOINT: /tiktok/profile]
 - If the query is not about Instagram or TikTok, use [DETECTED_ENDPOINT: none]
 
@@ -110,9 +118,15 @@ When users ask about Instagram or TikTok, be helpful and explain what they can d
 Provide clear, concise responses.
 
 IMPORTANT formatting rules:
-- Never use "*" symbols for lists
-- Always use numbered lists (1., 2., 3., etc.) when providing examples or lists
-- Format example lists as: "1. First example" "2. Second example" etc.`;
+- Never use "*" or "**" symbols for formatting (no markdown bold or bullet points)
+- Never use markdown formatting like **bold** or *italic*
+- Always use plain text with newlines for lists
+- Use numbered lists (1., 2., 3., etc.) when providing examples or lists
+- Format lists with each item on a new line, like:
+1. First item
+2. Second item
+3. Third item
+- Use plain text section headers without markdown (e.g., "For Instagram:" not "**For Instagram:**")`;
   }
 
   private normalizeLLMContent(content: unknown): string {
@@ -313,9 +327,10 @@ IMPORTANT formatting rules:
     }
   }
 
-  private getRequiredParamForEndpoint(): 'profile' {
-    // Search endpoints are disabled/removed from chat; only analysis/profile endpoints remain.
-    return 'profile';
+  private getRequiredParamForEndpoint(
+    endpoint: ChatEndpoint,
+  ): 'profile' | 'query' {
+    return endpoint.includes('/search') ? 'query' : 'profile';
   }
 
   /**
@@ -345,7 +360,7 @@ IMPORTANT formatting rules:
       } catch {
         // If JSON parsing fails, try regex extraction
         const endpointMatch = jsonMatch[0].match(
-          /"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile))"/,
+          /"detectedEndpoint":\s*"(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search))"/,
         );
         if (endpointMatch) {
           const candidate = endpointMatch[1].toLowerCase();
@@ -390,7 +405,20 @@ IMPORTANT formatting rules:
     const llmClient = this.ensureLLMClient();
 
     let prompt = '';
-    if (endpoint.includes('/profile') || endpoint.includes('/analysis')) {
+    if (endpoint.includes('/search')) {
+      prompt = `Extract the search query from the user's request. The user wants to search/discover creators.
+
+User request: "${userQuery}"
+
+Respond with ONLY a JSON object in this format:
+{"query": "the extracted search query"}
+
+If you cannot extract a clear search query, respond with:
+{"missing": "query"}`;
+    } else if (
+      endpoint.includes('/profile') ||
+      endpoint.includes('/analysis')
+    ) {
       prompt = `Extract the profile username from the user's request. The user wants to analyze a specific profile.
 
 User request: "${userQuery}"
@@ -448,11 +476,15 @@ If you cannot extract a clear profile username, respond with:
       > = {
         '/instagram/analysis': async (p) =>
           await this.instagramService.profile(p.profile as string),
+        '/instagram/search': async (p) =>
+          await this.instagramService.search(p.query as string),
         '/tiktok/profile': async (p) =>
           await this.tiktokService.profile(p.profile as string),
+        '/tiktok/search': async (p) =>
+          await this.tiktokService.search(p.query as string),
       };
 
-      const required = this.getRequiredParamForEndpoint();
+      const required = this.getRequiredParamForEndpoint(endpoint);
       if (!params[required]) {
         return null;
       }
@@ -548,7 +580,7 @@ If you cannot extract a clear profile username, respond with:
       userQuery,
     );
 
-    const required = this.getRequiredParamForEndpoint();
+    const required = this.getRequiredParamForEndpoint(detectedEndpoint);
     if (!extractedParams || !extractedParams[required]) {
       const promptMessage = `I need more information to proceed. Please provide the ${required} for this request.`;
       await this.safeCreateMessage({

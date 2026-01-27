@@ -4,7 +4,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BrightdataConfigModule, OpenrouterConfigModule } from '@libs/config';
 import { Task, TikTokSearchProfile } from '@libs/entities';
 import { QueueModule } from '@libs/queue';
-import { TasksRepository, TikTokSearchProfilesRepository } from '@libs/repositories';
+import {
+  TasksRepository,
+  TikTokSearchProfilesRepository,
+} from '@libs/repositories';
 
 import { MetricsModule, MetricsService } from '../metrics';
 
@@ -38,5 +41,3 @@ import { TikTokService } from './tiktok.service';
   exports: [TikTokService],
 })
 export class TikTokModule {}
-
-

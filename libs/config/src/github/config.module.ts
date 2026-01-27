@@ -15,5 +15,3 @@ import configuration from './configuration';
   exports: [GithubConfigService],
 })
 export class GithubConfigModule {}
-
-

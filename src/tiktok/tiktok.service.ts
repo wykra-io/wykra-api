@@ -32,7 +32,7 @@ export interface TikTokProfileAnalysis {
 export class TikTokService {
   private readonly logger = new Logger(TikTokService.name);
   // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
-  private static readonly SEARCH_PROFILES_DISABLED = true;
+  private static readonly SEARCH_PROFILES_DISABLED = false;
 
   constructor(
     private readonly brightdata: TikTokBrightdataService,
@@ -50,13 +50,16 @@ export class TikTokService {
    */
   public async analyzeProfile(profile: string): Promise<TikTokAnalysisData> {
     try {
-      this.logger.log(`Starting analysis for TikTok profile: ${profile}`);
+      const normalizedUrl = normalizeTikTokProfileUrl(profile);
+      this.logger.log(
+        `Starting analysis for TikTok profile: ${profile} (url=${normalizedUrl})`,
+      );
 
       const profileData = await this.fetchProfileData(profile);
       const analysis = await this.llm.analyzeProfile(profileData);
 
       return {
-        profile,
+        profile: profile.replace(/^@+/, '').trim(),
         data: profileData,
         analysis,
       };
@@ -411,6 +414,14 @@ export class TikTokService {
    * Creates a new TikTok profile analysis job and queues it for processing.
    */
   public async profile(profile: string): Promise<string> {
+    const raw = String(profile ?? '')
+      .trim()
+      .replace(/[)\]}>,.!?:;"'`]+$/g, '');
+    const profileForJob =
+      /^https?:\/\//i.test(raw) || /tiktok\.com/i.test(raw)
+        ? normalizeTikTokProfileUrl(raw)
+        : raw.replace(/^@+/, '');
+
     const taskId = randomUUID();
 
     await this.tasksRepo.create({
@@ -424,7 +435,7 @@ export class TikTokService {
 
     await this.queueService.tiktok.add('profile', {
       taskId,
-      profile,
+      profile: profileForJob,
     });
 
     this.metricsService.recordTaskCreated('tiktok_profile');
