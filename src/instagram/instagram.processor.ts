@@ -234,11 +234,12 @@ console.log(stage1Prompt);
       // Stage 2 variables (kept for backwards compatibility in result JSON)
       const stage2Prompt: string | null = null;
       const stage2ResponseContent: string | null = null;
-      const stage2Usage: {
+      type UsageStats = {
         promptTokens: number;
         completionTokens: number;
         totalTokens: number;
-      } | null = null;
+      };
+      const stage2Usage: UsageStats | null = null;
 
       // Run short Anthropic analysis for each collected profile and
       // persist each profile to the database as it is analyzed
@@ -264,6 +265,12 @@ console.log(stage1Prompt);
           };
 
       // Task completed successfully
+      const stage2UsageSafe: UsageStats = stage2Usage ?? {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+      };
+
       const result = JSON.stringify({
         query,
         context,
@@ -282,12 +289,13 @@ console.log(stage1Prompt);
           total: {
             promptTokens:
               (stage1Usage.promptTokens || 0) +
-              (stage2Usage?.promptTokens || 0),
+              (stage2UsageSafe.promptTokens || 0),
             completionTokens:
               (stage1Usage.completionTokens || 0) +
-              (stage2Usage?.completionTokens || 0),
+              (stage2UsageSafe.completionTokens || 0),
             totalTokens:
-              (stage1Usage.totalTokens || 0) + (stage2Usage?.totalTokens || 0),
+              (stage1Usage.totalTokens || 0) +
+              (stage2UsageSafe.totalTokens || 0),
           },
         },
         model: stage1Response.model,

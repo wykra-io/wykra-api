@@ -1,87 +1,131 @@
-export function SideMenu() {
+import type { ChatSession } from '../types';
+
+type Props = {
+  sessions: ChatSession[];
+  activeSessionId: number | null;
+  onSelectSession: (id: number) => void;
+  onNewSession: () => void;
+  isAdmin: boolean;
+  onShowDashboard: () => void;
+  showDashboard: boolean;
+};
+
+export function SideMenu({
+  sessions,
+  activeSessionId,
+  onSelectSession,
+  onNewSession,
+  isAdmin,
+  onShowDashboard,
+  showDashboard,
+}: Props) {
   return (
     <aside className="sideMenu">
       <nav className="sideMenuNav">
-        <div className="sideMenuSection">
-          <div className="sideMenuTitle">Menu</div>
-          <a href="#" className="sideMenuItem">
+        <div className="sideMenuHeader">
+          <button
+            type="button"
+            className="sideMenuNewChat"
+            onClick={onNewSession}
+          >
             <svg
-              width="20"
-              height="20"
+              width="18"
+              height="18"
               viewBox="0 0 24 24"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+                d="M12 5v14M5 12h14"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M9 22V12h6v10"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
               />
             </svg>
-            <span>Home</span>
-          </a>
-          <a href="#" className="sideMenuItem">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span>Chat</span>
-          </a>
-          <a href="#" className="sideMenuItem">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle
-                cx="9"
-                cy="7"
-                r="4"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span>Profiles</span>
-          </a>
+            <span>New chat</span>
+          </button>
         </div>
+
+        {isAdmin && (
+          <div className="sideMenuSection">
+            <button
+              type="button"
+              className={`sideMenuChatItem ${
+                showDashboard ? 'sideMenuChatItemActive' : ''
+              }`}
+              onClick={onShowDashboard}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                style={{ flexShrink: 0 }}
+              >
+                <rect
+                  x="3"
+                  y="3"
+                  width="7"
+                  height="7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <rect
+                  x="14"
+                  y="3"
+                  width="7"
+                  height="7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <rect
+                  x="3"
+                  y="14"
+                  width="7"
+                  height="7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <rect
+                  x="14"
+                  y="14"
+                  width="7"
+                  height="7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+              </svg>
+              <span>Admin Dashboard</span>
+            </button>
+          </div>
+        )}
+
+        {sessions.length > 0 && (
+          <div className="sideMenuSection">
+            <div className="sideMenuTitle">Chats</div>
+            <div className="sideMenuChatsList">
+              {sessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className={`sideMenuChatItem ${
+                    activeSessionId === session.id && !showDashboard
+                      ? 'sideMenuChatItemActive'
+                      : ''
+                  }`}
+                  onClick={() => onSelectSession(session.id)}
+                >
+                  <span>
+                    {session.title && session.title.trim()
+                      ? session.title
+                      : `Chat ${session.id}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </nav>
     </aside>
   );

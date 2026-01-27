@@ -2,11 +2,12 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { OpenrouterConfigModule } from '@libs/config';
-import { ChatMessage, ChatTask } from '@libs/entities';
+import { ChatMessage, ChatTask, ChatSession } from '@libs/entities';
 import { SentryClientModule } from '@libs/sentry';
 import {
   ChatMessagesRepository,
   ChatTasksRepository,
+  ChatSessionsRepository,
 } from '@libs/repositories';
 
 import { InstagramModule } from '../instagram';
@@ -24,10 +25,15 @@ import { ChatService } from './chat.service';
     InstagramModule,
     TikTokModule,
     TasksModule,
-    TypeOrmModule.forFeature([ChatMessage, ChatTask]),
+    TypeOrmModule.forFeature([ChatMessage, ChatTask, ChatSession]),
   ],
   controllers: [ChatController],
-  providers: [ChatService, ChatMessagesRepository, ChatTasksRepository],
+  providers: [
+    ChatService,
+    ChatMessagesRepository,
+    ChatTasksRepository,
+    ChatSessionsRepository,
+  ],
   exports: [ChatService],
 })
 export class ChatModule {}

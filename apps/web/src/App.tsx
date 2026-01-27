@@ -4,6 +4,7 @@ import { AuthModal } from './components/AuthModal';
 import { SideMenu } from './components/SideMenu';
 import { Topbar } from './components/Topbar';
 import { ChatView } from './components/chat/ChatView';
+import { AdminDashboard } from './components/AdminDashboard';
 import { getApiToken } from './api';
 import { useAuth } from './hooks/useAuth';
 import { useChat } from './hooks/useChat';
@@ -15,6 +16,7 @@ import {
 
 export function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const { isAuthed, me, startGithubSignIn, telegramSignIn, logout } = useAuth();
   const chat = useChat({ enabled: isAuthed });
 
@@ -54,7 +56,23 @@ export function App() {
       )}
 
       <main className="main">
-        {isTelegramMiniApp() ? null : <SideMenu />}
+        {isTelegramMiniApp() || !isAuthed ? null : (
+          <SideMenu
+            sessions={chat.sessions}
+            activeSessionId={chat.activeSessionId}
+            onSelectSession={(id) => {
+              setShowDashboard(false);
+              chat.setActiveSessionId(id);
+            }}
+            onNewSession={() => {
+              setShowDashboard(false);
+              chat.createNewSession();
+            }}
+            isAdmin={me?.isAdmin ?? false}
+            onShowDashboard={() => setShowDashboard(true)}
+            showDashboard={showDashboard}
+          />
+        )}
         <div className="mainInner">
           {!isAuthed ? (
             <div className="authCard">
@@ -72,6 +90,8 @@ export function App() {
                 </div>
               )}
             </div>
+          ) : showDashboard && (me?.isAdmin ?? false) ? (
+            <AdminDashboard />
           ) : (
             <ChatView
               messages={chat.messages}

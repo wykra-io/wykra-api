@@ -1,6 +1,7 @@
 :root {
   --wykra-text: #4f2f94;
   --wykra-theme: #422e63;
+  --wykra-theme-bright: #5d3f7a;
   --wykra-brand-font: 'Nunito', ui-sans-serif, system-ui, -apple-system, Segoe UI,
     Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
   color-scheme: light;
@@ -75,7 +76,7 @@ body {
 .sideMenu {
   width: 240px;
   flex-shrink: 0;
-  background: white;
+  background: #f8fafc;
   border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
@@ -84,17 +85,48 @@ body {
 }
 
 .sideMenuNav {
-  padding: 20px 0;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   height: 100%;
+  gap: 16px;
+}
+
+.sideMenuHeader {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.sideMenuNewChat {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--wykra-theme-bright);
+  color: white;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.sideMenuNewChat:hover {
+  filter: brightness(1.1);
+}
+
+.sideMenuNewChat svg {
+  flex-shrink: 0;
+  color: white;
 }
 
 .sideMenuSection {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0 12px;
+  gap: 8px;
 }
 
 .sideMenuTitle {
@@ -103,34 +135,45 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #64748b;
-  padding: 12px 12px 8px 12px;
+  padding: 0 4px;
   margin-bottom: 4px;
 }
 
-.sideMenuItem {
+.sideMenuChatsList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sideMenuChatItem {
   display: flex;
   align-items: center;
-  gap: 12px;
   padding: 10px 12px;
   color: #0f172a;
-  text-decoration: none;
   border-radius: 8px;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 14px;
-  transition: background-color 0.15s;
+  transition: background-color 0.15s, color 0.15s;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
 }
 
-.sideMenuItem:hover {
-  background: #f1f5f9;
+.sideMenuChatItem:hover {
+  background: #e2e8f0;
 }
 
-.sideMenuItem svg {
-  flex-shrink: 0;
-  color: #64748b;
+.sideMenuChatItemActive {
+  background: var(--wykra-theme-bright);
+  color: white;
+  font-weight: 600;
 }
 
-.sideMenuItem:hover svg {
-  color: #0f172a;
+.sideMenuChatItemActive:hover {
+  background: var(--wykra-theme-bright);
+  filter: brightness(1.05);
 }
 
 .topbar {
@@ -324,6 +367,8 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  text-align: center;
 }
 
 .title {
@@ -332,6 +377,7 @@ body {
   line-height: 1.05;
   letter-spacing: -0.03em;
   color: var(--wykra-text);
+  text-align: center;
 }
 
 .subtitle {
@@ -340,6 +386,7 @@ body {
   line-height: 1.6;
   color: #334155;
   max-width: 720px;
+  text-align: center;
 }
 
 .actions {
@@ -347,6 +394,7 @@ body {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .primaryBtn {
@@ -477,7 +525,7 @@ button:disabled {
   gap: 8px;
   padding: 10px;
   border-radius: 999px;
-  background: #0f172a;
+  background: var(--wykra-theme);
   color: white;
 }
 
@@ -519,7 +567,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: #111827;
+  background: var(--wykra-theme);
 }
 
 .githubIcon {
@@ -603,7 +651,7 @@ pre {
 }
 
 .chatMessageUser .chatMessageContent {
-  background: #0f172a;
+  background: var(--wykra-theme);
   color: white;
   border-bottom-right-radius: 4px;
 }
@@ -955,6 +1003,96 @@ pre {
   color: #475569;
   padding-top: 8px;
   border-top: 1px solid #e2e8f0;
+}
+
+/* Admin Dashboard Tabs */
+.adminTabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e2e8f0;
+  margin-top: 24px;
+  margin-bottom: 0;
+}
+
+.adminTab {
+  padding: 12px 24px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.adminTab:hover {
+  color: var(--wykra-theme);
+  background: #f8fafc;
+}
+
+.adminTabActive {
+  color: var(--wykra-theme);
+  border-bottom-color: var(--wykra-theme);
+}
+
+/* Admin Dashboard Table */
+.adminTableContainer {
+  margin-top: 0;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-top: none;
+  background: white;
+}
+
+.adminTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.adminTable thead {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.adminTable th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.adminTable th:last-child {
+  border-right: none;
+}
+
+.adminTable tbody tr {
+  border-bottom: 1px solid #e2e8f0;
+  transition: background 0.15s;
+}
+
+.adminTable tbody tr:hover {
+  background: #f8fafc;
+}
+
+.adminTable tbody tr:last-child {
+  border-bottom: none;
+}
+
+.adminTable td {
+  padding: 12px 16px;
+  color: #0f172a;
+  border-right: 1px solid #e2e8f0;
+}
+
+.adminTable td:last-child {
+  border-right: none;
 }
 
 

@@ -1,6 +1,7 @@
 export type MeResponse = {
   githubLogin: string;
   githubAvatarUrl: string | null;
+  isAdmin: boolean;
 };
 
 export type ChatMessage = {
@@ -9,6 +10,13 @@ export type ChatMessage = {
   content: string;
   detectedEndpoint?: string;
   createdAt?: string;
+};
+
+export type ChatSession = {
+  id: number;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ChatPostResponse = {

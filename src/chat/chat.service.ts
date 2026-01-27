@@ -8,6 +8,7 @@ import { SentryClientService } from '@libs/sentry';
 import {
   ChatMessagesRepository,
   ChatTasksRepository,
+  ChatSessionsRepository,
 } from '@libs/repositories';
 
 import { InstagramService } from '../instagram';
@@ -52,6 +53,7 @@ export class ChatService {
     private readonly metricsService: MetricsService,
     private readonly chatMessagesRepo: ChatMessagesRepository,
     private readonly chatTasksRepo: ChatTasksRepository,
+    private readonly chatSessionsRepo: ChatSessionsRepository,
     private readonly instagramService: InstagramService,
     private readonly tiktokService: TikTokService,
     private readonly tasksService: TasksService,
@@ -301,9 +303,16 @@ IMPORTANT formatting rules:
     role: ChatMessageRole;
     content: string;
     detectedEndpoint: string | null;
+    sessionId?: number | null;
   }): Promise<{ id: number } | null> {
     try {
-      const created = await this.chatMessagesRepo.create(params);
+      const created = await this.chatMessagesRepo.create({
+        userId: params.userId,
+        role: params.role,
+        content: params.content,
+        detectedEndpoint: params.detectedEndpoint,
+        sessionId: params.sessionId ?? null,
+      });
       return { id: created.id };
     } catch (error) {
       this.logger.warn(
@@ -389,9 +398,18 @@ IMPORTANT formatting rules:
   }
 
   /**
-   * Gets chat history for a user
+   * Gets chat history for a user and optional session
    */
-  public async getHistory(userId: number): Promise<ChatMessage[]> {
+  public async getHistory(
+    userId: number,
+    sessionId?: number,
+  ): Promise<ChatMessage[]> {
+    if (sessionId) {
+      return await this.chatMessagesRepo.findByUserIdAndSessionId(
+        userId,
+        sessionId,
+      );
+    }
     return await this.chatMessagesRepo.findByUserId(userId);
   }
 
@@ -571,8 +589,9 @@ If you cannot extract a clear profile username, respond with:
     userQuery: string;
     userId: number;
     startTime: number;
+    sessionId?: number;
   }): Promise<ChatResponse> {
-    const { detectedEndpoint, userQuery, userId, startTime } = params;
+    const { detectedEndpoint, userQuery, userId, startTime, sessionId } = params;
     this.logger.log(`Detected endpoint call: ${detectedEndpoint}`);
 
     const extractedParams = await this.extractEndpointParameters(
@@ -600,6 +619,7 @@ If you cannot extract a clear profile username, respond with:
       role: ChatMessageRole.Assistant,
       content: this.processingMessageContent,
       detectedEndpoint,
+      sessionId,
     });
     const processingMessageId = processingMsg?.id ?? null;
 
@@ -660,6 +680,7 @@ If you cannot extract a clear profile username, respond with:
         role: ChatMessageRole.User,
         content: dto.query,
         detectedEndpoint: null,
+        sessionId: dto.sessionId,
       });
 
       if (detectedEndpoint) {
@@ -668,6 +689,7 @@ If you cannot extract a clear profile username, respond with:
           userQuery: dto.query,
           userId,
           startTime,
+          sessionId: dto.sessionId,
         });
       }
 
@@ -676,6 +698,7 @@ If you cannot extract a clear profile username, respond with:
         role: ChatMessageRole.Assistant,
         content: cleanContent,
         detectedEndpoint: null,
+        sessionId: dto.sessionId,
       });
 
       const duration = (Date.now() - startTime) / 1000;
@@ -857,5 +880,16 @@ If you cannot extract a clear profile username, respond with:
         `Error handling task polling for ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  /**
+   * Chat sessions
+   */
+  public async getSessions(userId: number) {
+    return await this.chatSessionsRepo.findByUserId(userId);
+  }
+
+  public async createSession(userId: number, title: string | null) {
+    return await this.chatSessionsRepo.create({ userId, title });
   }
 }

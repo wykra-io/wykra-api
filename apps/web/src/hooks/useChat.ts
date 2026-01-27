@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   ChatPostResponse,
   TaskStatusResponse,
+  ChatSession,
 } from '../types';
 
 function normalizeChatPostResponse(payload: ChatPostResponse): {
@@ -19,6 +20,8 @@ function normalizeChatPostResponse(payload: ChatPostResponse): {
 }
 
 export function useChat({ enabled }: { enabled: boolean }) {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
@@ -40,11 +43,11 @@ export function useChat({ enabled }: { enabled: boolean }) {
   }, []);
 
   const loadChatHistory = useCallback(async () => {
-    if (!enabled) return null;
+    if (!enabled || !activeSessionId) return null;
     try {
       const historyResp = await apiGet<
         { data: Array<ChatMessage> } | Array<ChatMessage>
-      >(`/api/v1/chat/history`);
+      >(`/api/v1/chat/history?sessionId=${activeSessionId}`);
       const historyData = Array.isArray(historyResp)
         ? historyResp
         : historyResp.data || [];
@@ -84,12 +87,32 @@ export function useChat({ enabled }: { enabled: boolean }) {
       );
       return null;
     }
-  }, [enabled, scrollToBottom]);
+  }, [enabled, activeSessionId, scrollToBottom]);
+
+  const loadSessions = useCallback(async () => {
+    if (!enabled) return;
+    try {
+      const resp = await apiGet<{ data?: ChatSession[] } | ChatSession[]>(
+        `/api/v1/chat/sessions`,
+      );
+      const list = Array.isArray(resp) ? resp : resp.data || [];
+      setSessions(list);
+      if (!activeSessionId && list.length > 0) {
+        setActiveSessionId(list[0].id);
+      }
+    } catch (error) {
+      console.warn(
+        `Failed to load chat sessions: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }, [activeSessionId, enabled]);
 
   useEffect(() => {
     if (enabled) {
       isInitialLoadRef.current = true;
-      void loadChatHistory();
+      void loadSessions().then(() => void loadChatHistory());
     } else {
       setMessages([]);
       isInitialLoadRef.current = true;
@@ -97,7 +120,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
       setChatInput('');
       setChatSending(false);
     }
-  }, [enabled, loadChatHistory]);
+  }, [enabled, loadChatHistory, loadSessions]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -194,7 +217,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const query = chatInput.trim();
-      if (!query || !canSend) return;
+      if (!query || !canSend || !activeSessionId) return;
 
       const userMessage: ChatMessage = {
         id: `local-${Date.now()}`,
@@ -210,6 +233,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
       try {
         const response = await apiPost<ChatPostResponse>(`/api/v1/chat`, {
           query,
+          sessionId: activeSessionId,
         });
 
         const { taskId } = normalizeChatPostResponse(response);
@@ -230,7 +254,35 @@ export function useChat({ enabled }: { enabled: boolean }) {
     [canSend, chatInput, loadChatHistory, scrollToBottom],
   );
 
+  const createNewSession = useCallback(async () => {
+    try {
+      const resp = await apiPost<{ id: number; title: string | null }>(
+        `/api/v1/chat/sessions`,
+        {},
+      );
+      const created =
+        resp && typeof resp === 'object' && 'id' in resp
+          ? (resp as { id: number; title: string | null })
+          : { id: Date.now(), title: null };
+      setSessions((prev) => [created as unknown as ChatSession, ...prev]);
+      setActiveSessionId(created.id);
+      setMessages([]);
+      setActiveTaskId(null);
+      setChatInput('');
+    } catch (error) {
+      console.warn(
+        `Failed to create chat session: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }, []);
+
   return {
+    sessions,
+    activeSessionId,
+    setActiveSessionId,
+    createNewSession,
     messages,
     chatInput,
     chatSending,
