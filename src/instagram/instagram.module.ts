@@ -9,6 +9,7 @@ import {
   TasksRepository,
 } from '@libs/repositories';
 
+import { BrightdataModule } from '../brightdata';
 import { MetricsModule, MetricsService } from '../metrics';
 
 import { InstagramController } from './instagram.controller';
@@ -19,6 +20,7 @@ import { InstagramWebSearchService } from './instagram-web-search.service';
 @Module({
   imports: [
     BrightdataConfigModule,
+    BrightdataModule,
     OpenrouterConfigModule,
     QueueModule,
     TypeOrmModule.forFeature([Task, InstagramSearchProfile]),

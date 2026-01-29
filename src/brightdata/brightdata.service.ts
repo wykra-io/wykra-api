@@ -49,6 +49,246 @@ export class BrightdataService {
     return this.httpClient;
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** Default wait timeout: 20 minutes. Poll/status and download calls use retries. */
+  private static readonly ASYNC_WAIT_TIMEOUT_MS = 20 * 60 * 1000;
+  private static readonly ASYNC_POLL_INTERVAL_MS = 5000;
+  private static readonly ASYNC_MAX_RETRIES = 3;
+  private static readonly ASYNC_RETRY_DELAY_MS = 2000;
+
+  /**
+   * Async flow: trigger → poll progress until ready → download snapshot.
+   * Uses long timeout (20 min) and retries on progress/download errors so tasks do not fail on transient issues.
+   */
+  public async runDatasetTriggerAndDownload(
+    datasetId: BrightdataDataset | string,
+    triggerBody: unknown[],
+    params: Record<string, string>,
+    metricName: string,
+    opts?: {
+      timeoutMs?: number;
+      pollIntervalMs?: number;
+      maxRetries?: number;
+    },
+  ): Promise<unknown[]> {
+    const startTime = Date.now();
+    const timeoutMs =
+      opts?.timeoutMs ?? BrightdataService.ASYNC_WAIT_TIMEOUT_MS;
+    const pollIntervalMs =
+      opts?.pollIntervalMs ?? BrightdataService.ASYNC_POLL_INTERVAL_MS;
+    const maxRetries = opts?.maxRetries ?? BrightdataService.ASYNC_MAX_RETRIES;
+
+    try {
+      const { snapshot_id } = await this.triggerDatasetWithRetries(
+        datasetId,
+        triggerBody,
+        { include_errors: 'true', ...params },
+        maxRetries,
+      );
+
+      await this.waitForSnapshotWithRetries(snapshot_id, {
+        timeoutMs,
+        pollIntervalMs,
+        maxRetries,
+      });
+
+      const downloaded = await this.downloadSnapshotWithRetries(
+        snapshot_id,
+        maxRetries,
+      );
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        String(datasetId),
+        metricName,
+        duration,
+      );
+
+      return this.normalizeSnapshotToArray(downloaded);
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordBrightdataCall(
+        String(datasetId),
+        metricName,
+        duration,
+        'error',
+      );
+      this.metricsService.recordBrightdataError(
+        String(datasetId),
+        metricName,
+        'async_flow',
+      );
+      this.logger.error(
+        `BrightData runDatasetTriggerAndDownload failed (dataset=${String(
+          datasetId,
+        )}, metric=${metricName})`,
+        error,
+      );
+      this.sentry.sendException(error, {
+        datasetId: String(datasetId),
+        metricName,
+      });
+      throw error;
+    }
+  }
+
+  private async triggerDatasetWithRetries(
+    datasetId: BrightdataDataset | string,
+    triggerBody: unknown[],
+    params: Record<string, string>,
+    maxRetries: number,
+  ): Promise<{ snapshot_id: string }> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await this.ensureHttpClient().post<{
+          snapshot_id: string;
+        }>('/datasets/v3/trigger', triggerBody, {
+          params: { dataset_id: datasetId, ...params },
+        });
+        if (!response.data?.snapshot_id) {
+          throw new Error('BrightData trigger did not return snapshot_id');
+        }
+        return response.data;
+      } catch (err) {
+        lastError = err;
+        this.logger.warn(
+          `BrightData trigger attempt ${attempt}/${maxRetries} failed`,
+          err instanceof Error ? err.message : String(err),
+        );
+        if (attempt < maxRetries) {
+          await this.sleep(BrightdataService.ASYNC_RETRY_DELAY_MS);
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  private async waitForSnapshotWithRetries(
+    snapshotId: string,
+    opts: {
+      timeoutMs: number;
+      pollIntervalMs: number;
+      maxRetries: number;
+    },
+  ): Promise<void> {
+    const { timeoutMs, pollIntervalMs, maxRetries } = opts;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      let progress: { status?: string; error?: unknown } | undefined;
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const res = await this.ensureHttpClient().get<{
+            status?: string;
+            error?: unknown;
+          }>(`/datasets/v3/progress/${snapshotId}`);
+          progress = res.data ?? {};
+          lastErr = undefined;
+          break;
+        } catch (err) {
+          lastErr = err;
+          this.logger.warn(
+            `BrightData progress attempt ${attempt}/${maxRetries} for snapshot ${snapshotId}`,
+            err instanceof Error ? err.message : String(err),
+          );
+          if (attempt < maxRetries) {
+            await this.sleep(BrightdataService.ASYNC_RETRY_DELAY_MS);
+          }
+        }
+      }
+
+      if (typeof progress === 'undefined') {
+        throw lastErr instanceof Error
+          ? lastErr
+          : new Error('Progress check failed after retries');
+      }
+
+      const status = String(progress?.status ?? '').toLowerCase();
+      if (status === 'ready') {
+        return;
+      }
+      if (status === 'failed' || status === 'error') {
+        throw new Error(
+          `BrightData snapshot ${snapshotId} failed: ${JSON.stringify(
+            progress,
+          )}`,
+        );
+      }
+
+      await this.sleep(pollIntervalMs);
+    }
+
+    throw new Error(
+      `Timed out waiting for BrightData snapshot ${snapshotId} (${timeoutMs}ms)`,
+    );
+  }
+
+  private async downloadSnapshotWithRetries(
+    snapshotId: string,
+    maxRetries: number,
+  ): Promise<unknown> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await this.ensureHttpClient().get<unknown>(
+          `/datasets/v3/snapshot/${snapshotId}`,
+          {
+            params: { format: 'json' },
+            responseType: 'text',
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+          },
+        );
+        const body = response.data as string;
+        try {
+          return JSON.parse(body);
+        } catch {
+          return body;
+        }
+      } catch (err) {
+        lastError = err;
+        this.logger.warn(
+          `BrightData download snapshot ${snapshotId} attempt ${attempt}/${maxRetries} failed`,
+          err instanceof Error ? err.message : String(err),
+        );
+        if (attempt < maxRetries) {
+          await this.sleep(BrightdataService.ASYNC_RETRY_DELAY_MS);
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  private normalizeSnapshotToArray(downloaded: unknown): unknown[] {
+    if (Array.isArray(downloaded)) {
+      return downloaded;
+    }
+    if (typeof downloaded === 'string') {
+      const lines = downloaded
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const items: unknown[] = [];
+      for (const line of lines) {
+        try {
+          items.push(JSON.parse(line));
+        } catch {
+          // ignore malformed line
+        }
+      }
+      return items;
+    }
+    if (downloaded && typeof downloaded === 'object') {
+      return [downloaded];
+    }
+    return [];
+  }
+
   /**
    * Fetches Google SERP (Search Engine Results Page) data from BrightData.
    *

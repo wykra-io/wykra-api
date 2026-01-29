@@ -21,6 +21,7 @@ export class BrightdataConfigService {
   }
 
   public get timeout(): number {
-    return this.config.get<number>('brightdata.timeout', 30000);
+    // Default to 20 minutes (in milliseconds) if not explicitly configured
+    return this.config.get<number>('brightdata.timeout', 20 * 60 * 1000);
   }
 }

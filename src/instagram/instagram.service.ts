@@ -17,6 +17,7 @@ import {
   InstagramSearchProfilesRepository,
   TasksRepository,
 } from '@libs/repositories';
+import { BrightdataService } from '../brightdata';
 import { MetricsService } from '../metrics';
 
 import {
@@ -53,6 +54,7 @@ export class InstagramService {
 
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
+    private readonly brightdataService: BrightdataService,
     private readonly openrouterConfig: OpenrouterConfigService,
     private readonly sentry: SentryClientService,
     private readonly queueService: QueueService,
@@ -850,7 +852,8 @@ User query: '${query}'`;
   /**
    * Collects Instagram profile data from BrightData by profile URLs.
    *
-   * Uses the "Instagram - Profiles - collect by URL" mode of the Instagram dataset.
+   * Uses async flow: trigger → poll progress (up to 20 min) → download snapshot,
+   * with retries on progress and download errors so the task is not failed by transient issues.
    *
    * @param {string[]} urls - Array of Instagram profile URLs to collect.
    *
@@ -861,128 +864,42 @@ User query: '${query}'`;
       return [];
     }
 
-    const startTime = Date.now();
-    try {
-      this.logger.log(
-        `Collecting Instagram profiles by URL from BrightData for ${urls.length} urls`,
-      );
+    this.logger.log(
+      `Collecting Instagram profiles by URL from BrightData for ${urls.length} urls (async trigger → poll → download, up to 20 min)`,
+    );
 
-      const endpoint = `/datasets/v3/scrape`;
-      const datasetId = BrightdataDataset.INSTAGRAM;
+    const triggerBody = urls.map((url) => ({ url }));
+    const params: Record<string, string> = {
+      notify: 'false',
+      include_errors: 'true',
+      type: 'url_collection',
+    };
 
-      // BrightData "collect by URL" mode expects profile URLs in the input
-      const requestBody = {
-        input: urls.map((url) => ({ url })),
-      };
+    const rawItems = await this.brightdataService.runDatasetTriggerAndDownload(
+      BrightdataDataset.INSTAGRAM,
+      triggerBody,
+      params,
+      'collect_profiles_by_urls',
+      {
+        timeoutMs: 20 * 60 * 1000,
+        pollIntervalMs: 5000,
+        maxRetries: 3,
+      },
+    );
 
-      const params = {
-        dataset_id: datasetId,
-        notify: 'false',
-        include_errors: 'true',
-        type: 'url_collection',
-      };
+    // Skip error entries like {"error_code":"dead_page", ...}
+    const items = (rawItems as Record<string, unknown>[]).filter(
+      (obj) =>
+        obj &&
+        typeof obj === 'object' &&
+        !('error_code' in obj && obj.error_code),
+    );
 
-      const response = await this.ensureHttpClient().post<unknown>(
-        endpoint,
-        requestBody,
-        {
-          params,
-        },
-      );
+    this.logger.log(
+      `Collected ${items.length} Instagram profiles by URL (${urls.length} urls requested)`,
+    );
 
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.recordBrightdataCall(
-        BrightdataDataset.INSTAGRAM,
-        'collect_profiles_by_urls',
-        duration,
-      );
-
-      this.logger.log(
-        `Successfully collected Instagram profiles by URL for ${urls.length} urls`,
-      );
-
-      const data = response.data;
-
-      // BrightData often returns NDJSON (newline-delimited JSON) as a string
-      if (typeof data === 'string') {
-        const lines = data
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0);
-
-        const items: unknown[] = [];
-
-        for (const line of lines) {
-          try {
-            const obj = JSON.parse(line) as Record<string, unknown>;
-
-            // Skip error entries like {"error_code":"dead_page", ...}
-            if (obj.error_code) {
-              continue;
-            }
-
-            items.push(obj);
-          } catch {
-            // Ignore malformed lines, we'll just skip them
-          }
-        }
-
-        if (items.length > 0) {
-          return items;
-        }
-      }
-
-      if (Array.isArray(data)) {
-        return data as unknown[];
-      }
-
-      if (data && typeof data === 'object') {
-        return [data] as unknown[];
-      }
-
-      this.logger.warn(
-        'Unexpected response format from BrightData collectProfilesByUrls, returning empty array',
-      );
-      return [];
-    } catch (error) {
-      const axiosError = error as AxiosError;
-
-      if (axiosError.response) {
-        const status = axiosError.response.status;
-        const statusText = axiosError.response.statusText;
-        const responseData = axiosError.response.data;
-
-        this.logger.error(
-          `BrightData API error for collectProfilesByUrls: ${status} - ${statusText}`,
-          responseData,
-        );
-
-        this.sentry.sendException(error, { urls });
-
-        throw new Error(
-          `Failed to collect Instagram profiles by URL: ${statusText} (${status})`,
-        );
-      } else if (axiosError.request) {
-        this.logger.error(
-          'No response from BrightData API for collectProfilesByUrls',
-        );
-
-        this.sentry.sendException(error, { urls });
-
-        throw new Error('No response from Instagram collect-by-URL API');
-      } else {
-        this.logger.error(
-          'Error setting up request for collectProfilesByUrls:',
-          axiosError.message,
-        );
-
-        this.sentry.sendException(error, { urls });
-
-        throw new Error(
-          `Failed to collect Instagram profiles by URL: ${axiosError.message}`,
-        );
-      }
-    }
+    return items;
   }
 
   /**
