@@ -60,6 +60,37 @@ export class BrightdataService {
   private static readonly ASYNC_RETRY_DELAY_MS = 2000;
 
   /**
+   * Waits for a snapshot to be ready (Monitor Progress) then downloads it (Download Snapshot).
+   * Use when a synchronous scrape returns "still in progress" with a snapshot_id.
+   *
+   * @param snapshotId - Snapshot ID from Bright Data scrape/trigger response.
+   * @param opts - Optional timeout, poll interval, and retries (defaults: 20 min, 5s, 3).
+   * @returns Raw snapshot payload (array or object; caller normalizes as needed).
+   */
+  public async waitAndDownloadSnapshot(
+    snapshotId: string,
+    opts?: {
+      timeoutMs?: number;
+      pollIntervalMs?: number;
+      maxRetries?: number;
+    },
+  ): Promise<unknown> {
+    const timeoutMs =
+      opts?.timeoutMs ?? BrightdataService.ASYNC_WAIT_TIMEOUT_MS;
+    const pollIntervalMs =
+      opts?.pollIntervalMs ?? BrightdataService.ASYNC_POLL_INTERVAL_MS;
+    const maxRetries = opts?.maxRetries ?? BrightdataService.ASYNC_MAX_RETRIES;
+
+    await this.waitForSnapshotWithRetries(snapshotId, {
+      timeoutMs,
+      pollIntervalMs,
+      maxRetries,
+    });
+
+    return this.downloadSnapshotWithRetries(snapshotId, maxRetries);
+  }
+
+  /**
    * Async flow: trigger → poll progress until ready → download snapshot.
    * Uses long timeout (20 min) and retries on progress/download errors so tasks do not fail on transient issues.
    */
