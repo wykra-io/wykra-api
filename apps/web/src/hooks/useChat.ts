@@ -150,6 +150,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
   const isInitialLoadRef = useRef(true);
   const pendingPlaceholderIdRef = useRef<number | null>(null);
   const justReplacedPlaceholderRef = useRef(false);
@@ -339,11 +340,18 @@ export function useChat({ enabled }: { enabled: boolean }) {
     isInitialLoadRef.current = true;
   }, [activeSessionId]);
 
+  // Scroll to bottom when new messages appear.
+  useEffect(() => {
+    if (messages.length > 0) scrollToBottom();
+  }, [messages, scrollToBottom]);
+
   useEffect(() => {
     if (!enabled || !activeTaskId) return;
 
     let isCancelled = false;
-    const processingContent = 'Processing your request...';
+    const processingPrefix = 'Processing your request';
+    const isProcessingMessage = (content: string | undefined) =>
+      typeof content === 'string' && content.startsWith(processingPrefix);
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -373,8 +381,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
             const history = await loadChatHistory();
             const stillProcessing =
               history?.some(
-                (m) =>
-                  m.role === 'assistant' && m.content === processingContent,
+                (m) => m.role === 'assistant' && isProcessingMessage(m.content),
               ) ?? false;
             if (!stillProcessing) break;
             await sleep(750);
@@ -386,8 +393,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
             const idx = [...prev]
               .reverse()
               .findIndex(
-                (m) =>
-                  m.role === 'assistant' && m.content === processingContent,
+                (m) => m.role === 'assistant' && isProcessingMessage(m.content),
               );
             if (idx === -1) return prev;
             const realIdx = prev.length - 1 - idx;
@@ -410,6 +416,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
             return next;
           });
 
+          scrollToBottom();
           setActiveTaskId(null);
         }
       } catch (error) {
@@ -437,7 +444,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
       window.clearInterval(pollInterval);
       window.clearTimeout(timeout);
     };
-  }, [activeTaskId, enabled, loadChatHistory]);
+  }, [activeTaskId, enabled, loadChatHistory, scrollToBottom]);
 
   const canSend = useMemo(
     () => enabled && !chatSending && !activeTaskId,
@@ -475,7 +482,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
         const { taskId } = normalizeChatPostResponse(response);
         setActiveTaskId(taskId);
 
-        await loadChatHistory();
+        const updated = await loadChatHistory();
+        if (updated?.length) scrollToBottom();
       } catch (error) {
         const errorMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
@@ -485,6 +493,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
         setMessages((prev) => [...prev, errorMessage]);
       } finally {
         setChatSending(false);
+        // Keep input focused so user can type the next message
+        window.setTimeout(() => chatInputRef.current?.focus(), 0);
       }
     },
     [canSend, chatInput, loadChatHistory, scrollToBottom],
@@ -664,6 +674,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
     chatSending,
     activeTaskId,
     chatEndRef,
+    chatInputRef,
     canSend,
     onChatInputChange,
     onSubmit,

@@ -120,6 +120,7 @@ export function App() {
               activeTaskId={chat.activeTaskId}
               canSend={chat.canSend}
               chatEndRef={chat.chatEndRef}
+              chatInputRef={chat.chatInputRef}
               onChatInputChange={chat.onChatInputChange}
               onSubmit={(e) => void chat.onSubmit(e)}
             />
