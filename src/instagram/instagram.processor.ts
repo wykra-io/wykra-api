@@ -48,9 +48,11 @@ export class InstagramProcessor {
    * "Similar" here means same category, location, and followers_range (if present),
    * based on the structured context stored in completed instagram_search task results.
    */
-  private async getExcludedInstagramUrlsForContext(
-    context: { category: string | null; location: string | null; followers_range: string | null },
-  ): Promise<string[]> {
+  private async getExcludedInstagramUrlsForContext(context: {
+    category: string | null;
+    location: string | null;
+    followers_range: string | null;
+  }): Promise<string[]> {
     const results = new Set<string>();
 
     // Look at a reasonable number of recent completed tasks to avoid heavy scans.
@@ -181,8 +183,6 @@ Only include accounts with verified instagram.com URLs from credible sources.
 ${excludePart}Return ONLY URLs, one per line, no explanations.
 Do not invent usernames.`;
 
-console.log(stage1Prompt);
-
       const stage1Response = await this.webSearchService.searchUrls(
         stage1Prompt,
         1,
@@ -215,21 +215,8 @@ console.log(stage1Prompt);
           await this.instagramService.fetchProfilesForUrls(instagramUrlsStage1);
       }
 
-      // Parse Instagram profile URLs from BrightData profiles
-      const parsedInstagramUrlsStage1 = stage1Profiles
-        .map((p) => {
-          const obj = p as Record<string, unknown>;
-          const profileUrl =
-            (typeof obj.profile_url === 'string' && obj.profile_url) ||
-            (typeof obj.url === 'string' && obj.url) ||
-            null;
-          return profileUrl;
-        })
-        .filter((url): url is string => !!url && url.includes('instagram.com'));
-
       // Stage 2 is disabled - only use Stage 1 results
       const combinedProfiles = [...stage1Profiles];
-      const combinedInstagramUrls = [...new Set(instagramUrlsStage1)];
 
       // Stage 2 variables (kept for backwards compatibility in result JSON)
       const stage2Prompt: string | null = null;
@@ -250,6 +237,47 @@ console.log(stage1Prompt);
               combinedProfiles,
             )
           : [];
+
+      // Exclude private profiles and profiles rated 1/5 from search results.
+      // Sort remaining results by rating (highest first), then by followers.
+      const filteredProfiles = analyzedProfiles.filter((p) => {
+        if (p.isPrivate === true) return false;
+        const score =
+          typeof p.analysis?.score === 'number' &&
+          !Number.isNaN(p.analysis.score)
+            ? p.analysis.score
+            : 0;
+        return score > 1;
+      });
+
+      const sortedAnalyzedProfiles = [...filteredProfiles].sort((a, b) => {
+        const aScore =
+          typeof a.analysis?.score === 'number' &&
+          !Number.isNaN(a.analysis.score)
+            ? a.analysis.score
+            : 0;
+        const bScore =
+          typeof b.analysis?.score === 'number' &&
+          !Number.isNaN(b.analysis.score)
+            ? b.analysis.score
+            : 0;
+        if (aScore !== bScore) return bScore - aScore;
+
+        const aFollowers =
+          typeof a.followers === 'number' && !Number.isNaN(a.followers)
+            ? a.followers
+            : -1;
+        const bFollowers =
+          typeof b.followers === 'number' && !Number.isNaN(b.followers)
+            ? b.followers
+            : -1;
+        return bFollowers - aFollowers;
+      });
+
+      // URLs in the result should match the profiles we return (excluded ones removed)
+      const resultInstagramUrls = sortedAnalyzedProfiles.map(
+        (p) => p.profileUrl,
+      );
 
       // Calculate aggregate usage from all LLM calls
       const stage1Usage = stage1Response.usage
@@ -281,8 +309,8 @@ console.log(stage1Prompt);
         stage2Prompt,
         stage1Response: rawContentStage1,
         stage2Response: stage2ResponseContent,
-        instagramUrls: combinedInstagramUrls,
-        analyzedProfiles,
+        instagramUrls: resultInstagramUrls,
+        analyzedProfiles: sortedAnalyzedProfiles,
         usage: {
           stage1: stage1Usage,
           stage2: stage2Usage,
