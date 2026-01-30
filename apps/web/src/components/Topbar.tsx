@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { MeResponse } from '../types';
 import { WykraLogo } from './WykraLogo';
@@ -19,6 +19,17 @@ export function Topbar({
   hideSignIn,
 }: Props) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuWrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const el = userMenuWrapRef.current;
+      if (el && !el.contains(e.target as Node)) setUserMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [userMenuOpen]);
 
   return (
     <div className="topbar">
@@ -33,7 +44,7 @@ export function Topbar({
             </button>
           )
         ) : (
-          <div className="userMenuWrap">
+          <div className="userMenuWrap" ref={userMenuWrapRef}>
             <button
               className="avatarButton"
               type="button"

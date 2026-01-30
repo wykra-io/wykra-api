@@ -13,6 +13,7 @@ type Props = {
   activeTaskId: string | null;
   canSend: boolean;
   chatEndRef: RefObject<HTMLDivElement>;
+  chatInputRef: RefObject<HTMLInputElement>;
   onChatInputChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
 };
@@ -26,6 +27,7 @@ export function ChatView({
   activeTaskId,
   canSend,
   chatEndRef,
+  chatInputRef,
   onChatInputChange,
   onSubmit,
 }: Props) {
@@ -79,7 +81,8 @@ export function ChatView({
           {messages.length === 0 ? (
             <div className="chatEmpty">
               <p className="muted">
-                Start a conversation! Ask me about Instagram or TikTok profiles.
+                Start a conversation! Search for or ask me about Instagram or
+                TikTok profiles.
               </p>
             </div>
           ) : (
@@ -100,10 +103,11 @@ export function ChatView({
         <form onSubmit={onSubmit} className="chatInputForm">
           <div className="chatInputWrapper">
             <input
+              ref={chatInputRef}
               type="text"
               value={chatInput}
               onChange={onChatInputChange}
-              placeholder="Ask about Instagram or TikTok profiles..."
+              placeholder="Search or ask about Instagram or TikTok profiles..."
               disabled={!canSend}
               className="chatInput"
             />

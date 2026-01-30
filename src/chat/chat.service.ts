@@ -56,7 +56,19 @@ export class ChatService {
   private readonly logger = new Logger(ChatService.name);
   private readonly defaultModel = 'google/gemini-2.5-flash';
   private readonly llmClient: ChatOpenAI | null;
-  private readonly processingMessageContent = 'Processing your request...';
+  private getProcessingMessageContent(endpoint: ChatEndpoint): string {
+    switch (endpoint) {
+      case '/instagram/search':
+      case '/tiktok/search':
+        return 'Processing your request... This can take up to 20 minutes for search.';
+      case '/tiktok/profile':
+        return 'Processing your request... This can take up to 10 minutes for TikTok profile analysis.';
+      case '/instagram/analysis':
+        return 'Processing your request... This can take up to 5 minutes for Instagram profile analysis.';
+      default:
+        return 'Processing your request...';
+    }
+  }
 
   constructor(
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
@@ -675,7 +687,7 @@ If you cannot extract a clear profile username, respond with:
     const processingMsg = await this.safeCreateMessage({
       userId,
       role: ChatMessageRole.Assistant,
-      content: this.processingMessageContent,
+      content: this.getProcessingMessageContent(detectedEndpoint),
       detectedEndpoint,
       sessionId,
     });
