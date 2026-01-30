@@ -1,3 +1,4 @@
+import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -9,25 +10,28 @@ import {
   TasksRepository,
 } from '@libs/repositories';
 
+import { BrightdataModule } from '../brightdata';
 import { MetricsModule, MetricsService } from '../metrics';
-import { PerplexityModule } from '../perplexity';
 
 import { InstagramController } from './instagram.controller';
 import { InstagramProcessor } from './instagram.processor';
 import { InstagramService } from './instagram.service';
+import { InstagramWebSearchService } from './instagram-web-search.service';
 
 @Module({
   imports: [
     BrightdataConfigModule,
+    BrightdataModule,
+    CacheModule.register(),
     OpenrouterConfigModule,
     QueueModule,
     TypeOrmModule.forFeature([Task, InstagramSearchProfile]),
     MetricsModule,
-    PerplexityModule,
   ],
   controllers: [InstagramController],
   providers: [
     InstagramService,
+    InstagramWebSearchService,
     InstagramProcessor,
     TasksRepository,
     InstagramSearchProfilesRepository,

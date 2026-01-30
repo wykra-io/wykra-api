@@ -34,8 +34,12 @@ function normalizeMeResponse(payload: unknown): MeResponse | null {
     githubAvatarUrlRaw === null || typeof githubAvatarUrlRaw === 'string'
       ? githubAvatarUrlRaw
       : null;
+  const isAdmin =
+    typeof (candidate as { isAdmin?: unknown }).isAdmin === 'boolean'
+      ? (candidate as { isAdmin: boolean }).isAdmin
+      : false;
 
-  return { githubLogin, githubAvatarUrl };
+  return { githubLogin, githubAvatarUrl, isAdmin };
 }
 
 function extractToken(payload: unknown): string | null {

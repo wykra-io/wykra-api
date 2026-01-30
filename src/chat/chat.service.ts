@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
@@ -8,6 +10,7 @@ import { SentryClientService } from '@libs/sentry';
 import {
   ChatMessagesRepository,
   ChatTasksRepository,
+  ChatSessionsRepository,
 } from '@libs/repositories';
 
 import { InstagramService } from '../instagram';
@@ -17,23 +20,36 @@ import { TikTokService } from '../tiktok';
 import { ChatDTO } from './dto';
 import { ChatResponse } from './interfaces';
 
-type ChatEndpoint = '/instagram/analysis' | '/tiktok/profile';
+type ChatEndpoint =
+  | '/instagram/analysis'
+  | '/instagram/search'
+  | '/tiktok/profile'
+  | '/tiktok/search';
 
 type EndpointParams = { query?: string; profile?: string };
 
 const DETECTED_ENDPOINT_FULLPATH_RE =
-  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|tiktok\/profile))\s*\]/i;
+  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search))\s*\]/i;
 const DETECTED_ENDPOINT_JSON_RE =
-  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile))"[\s\S]*\}/;
+  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search))"[\s\S]*\}/;
 const DETECTED_ENDPOINT_ALLOWED_RE =
-  /^\/(?:instagram\/analysis|tiktok\/profile)$/;
+  /^\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search)$/;
 
 const STRIP_DETECTED_ENDPOINT_MARKER_RE =
-  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|tiktok\/profile)|none)\s*\]/gi;
+  /\[DETECTED_ENDPOINT:\s*(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search)|none)\s*\]/gi;
 const STRIP_DETECTED_ENDPOINT_JSON_RE =
-  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile)|none)"[\s\S]*\}/;
+  /\{[\s\S]*"detectedEndpoint":\s*"(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search)|none)"[\s\S]*\}/;
 const STRIP_DETECTED_ENDPOINT_PLATFORM_MARKER_RE =
   /\[DETECTED_ENDPOINT:\s*(instagram|tiktok|none)\]/gi;
+
+const SEARCH_RATE_LIMIT_TTL_SECONDS = 60 * 60; // 1 hour
+
+export class SearchRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SearchRateLimitError';
+  }
+}
 
 @Injectable()
 export class ChatService {
@@ -43,11 +59,13 @@ export class ChatService {
   private readonly processingMessageContent = 'Processing your request...';
 
   constructor(
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
     private readonly openrouterConfig: OpenrouterConfigService,
     private readonly sentry: SentryClientService,
     private readonly metricsService: MetricsService,
     private readonly chatMessagesRepo: ChatMessagesRepository,
     private readonly chatTasksRepo: ChatTasksRepository,
+    private readonly chatSessionsRepo: ChatSessionsRepository,
     private readonly instagramService: InstagramService,
     private readonly tiktokService: TikTokService,
     private readonly tasksService: TasksService,
@@ -95,14 +113,18 @@ export class ChatService {
 You help users interact with social media analysis tools for Instagram and TikTok.
 
 Available endpoints:
+- /instagram/search - Search for Instagram creators (POST, requires query parameter)
 - /instagram/analysis - Analyze a specific Instagram profile (POST, requires profile parameter)
+- /tiktok/search - Search for TikTok creators (POST, requires query parameter)
 - /tiktok/profile - Analyze a specific TikTok profile (POST, requires profile parameter)
 
 IMPORTANT: At the end of your response, you MUST include endpoint detection information in this exact format:
-[DETECTED_ENDPOINT: /instagram/analysis] or [DETECTED_ENDPOINT: /tiktok/profile] or [DETECTED_ENDPOINT: none]
+[DETECTED_ENDPOINT: /instagram/search] or [DETECTED_ENDPOINT: /instagram/analysis] or [DETECTED_ENDPOINT: /tiktok/search] or [DETECTED_ENDPOINT: /tiktok/profile] or [DETECTED_ENDPOINT: none]
 
 Detection rules:
+- If the user wants to search/discover creators on Instagram, use [DETECTED_ENDPOINT: /instagram/search]
 - If the user wants to analyze a specific Instagram profile/account, use [DETECTED_ENDPOINT: /instagram/analysis]
+- If the user wants to search/discover creators on TikTok, use [DETECTED_ENDPOINT: /tiktok/search]
 - If the user wants to analyze a specific TikTok profile/account, use [DETECTED_ENDPOINT: /tiktok/profile]
 - If the query is not about Instagram or TikTok, use [DETECTED_ENDPOINT: none]
 
@@ -110,9 +132,15 @@ When users ask about Instagram or TikTok, be helpful and explain what they can d
 Provide clear, concise responses.
 
 IMPORTANT formatting rules:
-- Never use "*" symbols for lists
-- Always use numbered lists (1., 2., 3., etc.) when providing examples or lists
-- Format example lists as: "1. First example" "2. Second example" etc.`;
+- Never use "*" or "**" symbols for formatting (no markdown bold or bullet points)
+- Never use markdown formatting like **bold** or *italic*
+- Always use plain text with newlines for lists
+- Use numbered lists (1., 2., 3., etc.) when providing examples or lists
+- Format lists with each item on a new line, like:
+1. First item
+2. Second item
+3. Third item
+- Use plain text section headers without markdown (e.g., "For Instagram:" not "**For Instagram:**")`;
   }
 
   private normalizeLLMContent(content: unknown): string {
@@ -287,9 +315,16 @@ IMPORTANT formatting rules:
     role: ChatMessageRole;
     content: string;
     detectedEndpoint: string | null;
+    sessionId?: number | null;
   }): Promise<{ id: number } | null> {
     try {
-      const created = await this.chatMessagesRepo.create(params);
+      const created = await this.chatMessagesRepo.create({
+        userId: params.userId,
+        role: params.role,
+        content: params.content,
+        detectedEndpoint: params.detectedEndpoint,
+        sessionId: params.sessionId ?? null,
+      });
       return { id: created.id };
     } catch (error) {
       this.logger.warn(
@@ -313,9 +348,10 @@ IMPORTANT formatting rules:
     }
   }
 
-  private getRequiredParamForEndpoint(): 'profile' {
-    // Search endpoints are disabled/removed from chat; only analysis/profile endpoints remain.
-    return 'profile';
+  private getRequiredParamForEndpoint(
+    endpoint: ChatEndpoint,
+  ): 'profile' | 'query' {
+    return endpoint.includes('/search') ? 'query' : 'profile';
   }
 
   /**
@@ -345,7 +381,7 @@ IMPORTANT formatting rules:
       } catch {
         // If JSON parsing fails, try regex extraction
         const endpointMatch = jsonMatch[0].match(
-          /"detectedEndpoint":\s*"(\/(?:instagram\/analysis|tiktok\/profile))"/,
+          /"detectedEndpoint":\s*"(\/(?:instagram\/analysis|instagram\/search|tiktok\/profile|tiktok\/search))"/,
         );
         if (endpointMatch) {
           const candidate = endpointMatch[1].toLowerCase();
@@ -374,9 +410,18 @@ IMPORTANT formatting rules:
   }
 
   /**
-   * Gets chat history for a user
+   * Gets chat history for a user and optional session
    */
-  public async getHistory(userId: number): Promise<ChatMessage[]> {
+  public async getHistory(
+    userId: number,
+    sessionId?: number,
+  ): Promise<ChatMessage[]> {
+    if (sessionId) {
+      return await this.chatMessagesRepo.findByUserIdAndSessionId(
+        userId,
+        sessionId,
+      );
+    }
     return await this.chatMessagesRepo.findByUserId(userId);
   }
 
@@ -390,7 +435,20 @@ IMPORTANT formatting rules:
     const llmClient = this.ensureLLMClient();
 
     let prompt = '';
-    if (endpoint.includes('/profile') || endpoint.includes('/analysis')) {
+    if (endpoint.includes('/search')) {
+      prompt = `Extract the search query from the user's request. The user wants to search/discover creators.
+
+User request: "${userQuery}"
+
+Respond with ONLY a JSON object in this format:
+{"query": "the extracted search query"}
+
+If you cannot extract a clear search query, respond with:
+{"missing": "query"}`;
+    } else if (
+      endpoint.includes('/profile') ||
+      endpoint.includes('/analysis')
+    ) {
       prompt = `Extract the profile username from the user's request. The user wants to analyze a specific profile.
 
 User request: "${userQuery}"
@@ -442,22 +500,60 @@ If you cannot extract a clear profile username, respond with:
     chatMessageId: number | null,
   ): Promise<string | null> {
     try {
+      if (endpoint === '/instagram/search') {
+        const key = `ratelimit:instagram_search:${userId}`;
+        const existing = await this.cache.get(key);
+        if (existing !== undefined && existing !== null) {
+          throw new SearchRateLimitError(
+            'Instagram search is limited to 1 per hour. Please try again later.',
+          );
+        }
+      }
+      if (endpoint === '/tiktok/search') {
+        const key = `ratelimit:tiktok_search:${userId}`;
+        const existing = await this.cache.get(key);
+        if (existing !== undefined && existing !== null) {
+          throw new SearchRateLimitError(
+            'TikTok search is limited to 1 per hour. Please try again later.',
+          );
+        }
+      }
+
       const endpointCallMap: Record<
         ChatEndpoint,
         (p: EndpointParams) => Promise<string>
       > = {
         '/instagram/analysis': async (p) =>
           await this.instagramService.profile(p.profile as string),
+        '/instagram/search': async (p) =>
+          await this.instagramService.search(p.query as string),
         '/tiktok/profile': async (p) =>
           await this.tiktokService.profile(p.profile as string),
+        '/tiktok/search': async (p) =>
+          await this.tiktokService.search(p.query as string),
       };
 
-      const required = this.getRequiredParamForEndpoint();
+      const required = this.getRequiredParamForEndpoint(endpoint);
       if (!params[required]) {
         return null;
       }
 
       const taskId = await endpointCallMap[endpoint](params);
+
+      if (endpoint === '/instagram/search' && taskId) {
+        await this.cache.set(
+          `ratelimit:instagram_search:${userId}`,
+          1,
+          SEARCH_RATE_LIMIT_TTL_SECONDS,
+        );
+      }
+      if (endpoint === '/tiktok/search' && taskId) {
+        await this.cache.set(
+          `ratelimit:tiktok_search:${userId}`,
+          1,
+          SEARCH_RATE_LIMIT_TTL_SECONDS,
+        );
+      }
 
       if (taskId) {
         await this.chatTasksRepo.create({
@@ -472,6 +568,9 @@ If you cannot extract a clear profile username, respond with:
 
       return taskId;
     } catch (error) {
+      if (error instanceof SearchRateLimitError) {
+        throw error;
+      }
       this.logger.error(
         `Failed to call endpoint ${endpoint}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -482,15 +581,25 @@ If you cannot extract a clear profile username, respond with:
   /**
    * Polls task status and returns result when completed
    */
-  private async pollTaskStatus(taskId: string): Promise<{
+  private async pollTaskStatus(
+    taskId: string,
+    opts?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<{
     status: string;
     result?: unknown;
     error?: string;
   }> {
-    const maxAttempts = 60;
-    let attempts = 0;
+    const timeoutMs =
+      typeof opts?.timeoutMs === 'number' && opts.timeoutMs > 0
+        ? opts.timeoutMs
+        : 5 * 60 * 1000;
+    const intervalMs =
+      typeof opts?.intervalMs === 'number' && opts.intervalMs > 0
+        ? opts.intervalMs
+        : 5000;
+    const deadline = Date.now() + timeoutMs;
 
-    while (attempts < maxAttempts) {
+    while (Date.now() < deadline) {
       try {
         const { task } = await this.tasksService.getTaskStatus(taskId);
         if (!task) {
@@ -520,14 +629,12 @@ If you cannot extract a clear profile username, respond with:
           return { status: 'failed', error: task.error || 'Task failed' };
         }
 
-        await this.sleep(5000);
-        attempts++;
+        await this.sleep(intervalMs);
       } catch (error) {
         this.logger.warn(
           `Error polling task ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
         );
-        attempts++;
-        await this.sleep(5000);
+        await this.sleep(intervalMs);
       }
     }
 
@@ -539,8 +646,10 @@ If you cannot extract a clear profile username, respond with:
     userQuery: string;
     userId: number;
     startTime: number;
+    sessionId?: number;
   }): Promise<ChatResponse> {
-    const { detectedEndpoint, userQuery, userId, startTime } = params;
+    const { detectedEndpoint, userQuery, userId, startTime, sessionId } =
+      params;
     this.logger.log(`Detected endpoint call: ${detectedEndpoint}`);
 
     const extractedParams = await this.extractEndpointParameters(
@@ -548,7 +657,7 @@ If you cannot extract a clear profile username, respond with:
       userQuery,
     );
 
-    const required = this.getRequiredParamForEndpoint();
+    const required = this.getRequiredParamForEndpoint(detectedEndpoint);
     if (!extractedParams || !extractedParams[required]) {
       const promptMessage = `I need more information to proceed. Please provide the ${required} for this request.`;
       await this.safeCreateMessage({
@@ -568,15 +677,44 @@ If you cannot extract a clear profile username, respond with:
       role: ChatMessageRole.Assistant,
       content: this.processingMessageContent,
       detectedEndpoint,
+      sessionId,
     });
     const processingMessageId = processingMsg?.id ?? null;
 
-    const taskId = await this.callEndpoint(
-      detectedEndpoint,
-      extractedParams,
-      userId,
-      processingMessageId,
-    );
+    let taskId: string | null = null;
+    try {
+      taskId = await this.callEndpoint(
+        detectedEndpoint,
+        extractedParams,
+        userId,
+        processingMessageId,
+      );
+    } catch (error) {
+      if (error instanceof SearchRateLimitError) {
+        const rateLimitMessage = error.message;
+        if (processingMessageId) {
+          await this.safeUpdateMessage(
+            processingMessageId,
+            { content: rateLimitMessage, detectedEndpoint: null },
+            'search rate limit',
+          );
+        } else {
+          await this.safeCreateMessage({
+            userId,
+            role: ChatMessageRole.Assistant,
+            content: rateLimitMessage,
+            detectedEndpoint: null,
+            sessionId,
+          });
+        }
+        const duration = (Date.now() - startTime) / 1000;
+        this.logger.log(
+          `Chat response generated in ${duration}s (rate limited)`,
+        );
+        return { response: rateLimitMessage };
+      }
+      throw error;
+    }
 
     if (!taskId) {
       const errorMessage =
@@ -628,6 +766,7 @@ If you cannot extract a clear profile username, respond with:
         role: ChatMessageRole.User,
         content: dto.query,
         detectedEndpoint: null,
+        sessionId: dto.sessionId,
       });
 
       if (detectedEndpoint) {
@@ -636,6 +775,7 @@ If you cannot extract a clear profile username, respond with:
           userQuery: dto.query,
           userId,
           startTime,
+          sessionId: dto.sessionId,
         });
       }
 
@@ -644,6 +784,7 @@ If you cannot extract a clear profile username, respond with:
         role: ChatMessageRole.Assistant,
         content: cleanContent,
         detectedEndpoint: null,
+        sessionId: dto.sessionId,
       });
 
       const duration = (Date.now() - startTime) / 1000;
@@ -787,7 +928,13 @@ If you cannot extract a clear profile username, respond with:
         );
       }
 
-      const taskResult = await this.pollTaskStatus(taskId);
+      const isTikTok =
+        typeof endpoint === 'string' && endpoint.includes('/tiktok/');
+      const taskResult = await this.pollTaskStatus(taskId, {
+        // TikTok scraping/LLM can take 10-20+ minutes; keep polling longer.
+        timeoutMs: isTikTok ? 30 * 60 * 1000 : 5 * 60 * 1000,
+        intervalMs: isTikTok ? 10_000 : 5_000,
+      });
 
       try {
         await this.chatTasksRepo.update(taskId, {
@@ -825,5 +972,58 @@ If you cannot extract a clear profile username, respond with:
         `Error handling task polling for ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  /**
+   * Chat sessions
+   */
+  public async getSessions(userId: number) {
+    return await this.chatSessionsRepo.findByUserId(userId);
+  }
+
+  public async createSession(userId: number, title: string | null) {
+    return await this.chatSessionsRepo.create({ userId, title });
+  }
+
+  public async updateSessionTitle(
+    userId: number,
+    sessionId: number,
+    title: string | null,
+  ): Promise<{ id: number; title: string | null }> {
+    const session = await this.chatSessionsRepo.findByUserIdAndId(
+      userId,
+      sessionId,
+    );
+    if (!session) {
+      throw new Error('Chat session not found');
+    }
+
+    const normalized =
+      typeof title === 'string' && title.trim().length > 0
+        ? title.trim()
+        : null;
+    await this.chatSessionsRepo.updateTitle(userId, sessionId, normalized);
+    return { id: sessionId, title: normalized };
+  }
+
+  public async deleteSession(userId: number, sessionId: number): Promise<void> {
+    const session = await this.chatSessionsRepo.findByUserIdAndId(
+      userId,
+      sessionId,
+    );
+    if (!session) {
+      throw new Error('Chat session not found');
+    }
+
+    const messages = await this.chatMessagesRepo.findByUserIdAndSessionId(
+      userId,
+      sessionId,
+    );
+    const messageIds = messages.map((m) => m.id);
+
+    // chat_tasks.chat_message_id is nullable; null it out before deleting messages
+    await this.chatTasksRepo.nullifyChatMessageIds(userId, messageIds);
+    await this.chatMessagesRepo.deleteByUserIdAndSessionId(userId, sessionId);
+    await this.chatSessionsRepo.deleteByUserIdAndId(userId, sessionId);
   }
 }

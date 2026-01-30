@@ -18,5 +18,3 @@ export class AddGithubAvatarUrlToUsers1747000000005
     await queryRunner.dropColumn('users', 'github_avatar_url');
   }
 }
-
-

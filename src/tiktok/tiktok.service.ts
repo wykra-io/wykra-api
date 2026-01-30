@@ -22,6 +22,11 @@ import { normalizeTikTokProfileUrl } from './utils/tiktok.utils';
 
 export interface TikTokProfileAnalysis {
   profileUrl: string;
+  account?: string;
+  followers?: number | null;
+  videosCount?: number | null;
+  profileImageUrl?: string | null;
+  isPrivate?: boolean | null;
   analysis: {
     summary: string;
     score: number;
@@ -32,7 +37,7 @@ export interface TikTokProfileAnalysis {
 export class TikTokService {
   private readonly logger = new Logger(TikTokService.name);
   // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
-  private static readonly SEARCH_PROFILES_DISABLED = true;
+  private static readonly SEARCH_PROFILES_DISABLED = false;
 
   constructor(
     private readonly brightdata: TikTokBrightdataService,
@@ -50,13 +55,16 @@ export class TikTokService {
    */
   public async analyzeProfile(profile: string): Promise<TikTokAnalysisData> {
     try {
-      this.logger.log(`Starting analysis for TikTok profile: ${profile}`);
+      const normalizedUrl = normalizeTikTokProfileUrl(profile);
+      this.logger.log(
+        `Starting analysis for TikTok profile: ${profile} (url=${normalizedUrl})`,
+      );
 
       const profileData = await this.fetchProfileData(profile);
       const analysis = await this.llm.analyzeProfile(profileData);
 
       return {
-        profile,
+        profile: profile.replace(/^@+/, '').trim(),
         data: profileData,
         analysis,
       };
@@ -88,6 +96,10 @@ export class TikTokService {
         type: 'url_collection',
       },
       'fetch_profile_data',
+      {
+        timeoutMs: 15 * 60 * 1000,
+        maxRetries: 3,
+      },
     );
 
     if (items.length > 0 && items[0] && typeof items[0] === 'object') {
@@ -207,6 +219,19 @@ export class TikTokService {
         (typeof p.follower_count === 'number' && p.follower_count) ||
         null;
 
+      const videosCount =
+        (typeof p.videos_count === 'number' && p.videos_count) ||
+        (typeof p.video_count === 'number' && p.video_count) ||
+        (typeof p.posts_count === 'number' && p.posts_count) ||
+        null;
+
+      const profileImageUrl =
+        (typeof p.profile_pic_url === 'string' && p.profile_pic_url) ||
+        (typeof p.profile_image_link === 'string' && p.profile_image_link) ||
+        (typeof p.avatar_url === 'string' && p.avatar_url) ||
+        (typeof p.avatar === 'string' && p.avatar) ||
+        null;
+
       const isPrivate =
         (typeof p.is_private === 'boolean' && p.is_private) ||
         (typeof p.private_account === 'boolean' && p.private_account) ||
@@ -223,6 +248,11 @@ export class TikTokService {
 
         analyses.push({
           profileUrl,
+          account,
+          followers,
+          videosCount,
+          profileImageUrl,
+          isPrivate,
           analysis: { summary, score },
         });
 
@@ -258,6 +288,11 @@ export class TikTokService {
 
         analyses.push({
           profileUrl,
+          account,
+          followers,
+          videosCount,
+          profileImageUrl,
+          isPrivate,
           analysis: {
             summary: `Analysis failed for ${account} (${profileUrl}).`,
             score: 2,
@@ -397,10 +432,20 @@ export class TikTokService {
       completedAt: null,
     });
 
-    await this.queueService.tiktok.add('search', {
-      taskId,
-      query,
-    });
+    await this.queueService.tiktok.add(
+      'search',
+      {
+        taskId,
+        query,
+      },
+      {
+        // BrightData snapshot runs can take a long time; ensure the job isn't killed early.
+        timeout: 30 * 60 * 1000, // 30 minutes
+        // Keep explicit attempts/backoff here so search retries even if queue defaults change.
+        attempts: 3,
+        backoff: { type: 'fixed', delay: 60 * 1000 }, // 1 minute
+      },
+    );
 
     this.metricsService.recordTaskCreated('tiktok_search');
 
@@ -411,6 +456,14 @@ export class TikTokService {
    * Creates a new TikTok profile analysis job and queues it for processing.
    */
   public async profile(profile: string): Promise<string> {
+    const raw = String(profile ?? '')
+      .trim()
+      .replace(/[)\]}>,.!?:;"'`]+$/g, '');
+    const profileForJob =
+      /^https?:\/\//i.test(raw) || /tiktok\.com/i.test(raw)
+        ? normalizeTikTokProfileUrl(raw)
+        : raw.replace(/^@+/, '');
+
     const taskId = randomUUID();
 
     await this.tasksRepo.create({
@@ -424,7 +477,7 @@ export class TikTokService {
 
     await this.queueService.tiktok.add('profile', {
       taskId,
-      profile,
+      profile: profileForJob,
     });
 
     this.metricsService.recordTaskCreated('tiktok_profile');

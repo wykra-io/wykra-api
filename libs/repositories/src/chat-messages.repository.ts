@@ -57,6 +57,33 @@ export class ChatMessagesRepository {
     }
   }
 
+  public async findByUserIdAndSessionId(
+    userId: number,
+    sessionId: number,
+  ): Promise<ChatMessage[]> {
+    const startTime = Date.now();
+    try {
+      const result = await this.repository.find({
+        where: { userId, sessionId },
+        order: { createdAt: 'ASC' },
+      });
+      const duration = (Date.now() - startTime) / 1000;
+      this.metrics?.recordDbQuery(
+        'findByUserIdAndSessionId',
+        'ChatMessage',
+        duration,
+      );
+      return result;
+    } catch (error) {
+      this.metrics?.recordDbQueryError(
+        'findByUserIdAndSessionId',
+        'ChatMessage',
+        'query_error',
+      );
+      throw error;
+    }
+  }
+
   public async update(
     id: number,
     updates: Partial<ChatMessage>,
@@ -87,5 +114,27 @@ export class ChatMessagesRepository {
       throw error;
     }
   }
-}
 
+  public async deleteByUserIdAndSessionId(
+    userId: number,
+    sessionId: number,
+  ): Promise<void> {
+    const startTime = Date.now();
+    try {
+      await this.repository.delete({ userId, sessionId });
+      const duration = (Date.now() - startTime) / 1000;
+      this.metrics?.recordDbQuery(
+        'deleteByUserIdAndSessionId',
+        'ChatMessage',
+        duration,
+      );
+    } catch (error) {
+      this.metrics?.recordDbQueryError(
+        'deleteByUserIdAndSessionId',
+        'ChatMessage',
+        'delete_error',
+      );
+      throw error;
+    }
+  }
+}

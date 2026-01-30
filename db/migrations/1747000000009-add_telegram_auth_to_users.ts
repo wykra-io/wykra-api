@@ -1,4 +1,9 @@
-import { MigrationInterface, QueryRunner, TableColumn, TableIndex } from 'typeorm';
+import {
+  MigrationInterface,
+  QueryRunner,
+  TableColumn,
+  TableIndex,
+} from 'typeorm';
 
 export class AddTelegramAuthToUsers1747000000009 implements MigrationInterface {
   public get _tableName(): string {
@@ -66,7 +71,10 @@ export class AddTelegramAuthToUsers1747000000009 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.dropIndex(this._tableName, `${this._tableName}_telegram_id_idx`);
+    await queryRunner.dropIndex(
+      this._tableName,
+      `${this._tableName}_telegram_id_idx`,
+    );
     await queryRunner.dropColumns(this._tableName, [
       'telegram_id',
       'telegram_username',
@@ -97,5 +105,3 @@ export class AddTelegramAuthToUsers1747000000009 implements MigrationInterface {
     );
   }
 }
-
-

@@ -75,6 +75,7 @@ export class AuthController {
   public me(@Req() req: Request & { user?: User }): {
     githubLogin: string;
     githubAvatarUrl: string | null;
+    isAdmin: boolean;
   } {
     const user = req.user;
     if (!user) {
@@ -93,6 +94,7 @@ export class AuthController {
     return {
       githubLogin: login,
       githubAvatarUrl: avatar,
+      isAdmin: user.isAdmin ?? false,
     };
   }
 

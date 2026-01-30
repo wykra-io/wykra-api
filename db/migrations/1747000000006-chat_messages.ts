@@ -72,4 +72,3 @@ export class ChatMessages1747000000006 implements MigrationInterface {
     await queryRunner.dropTable(this._tableName);
   }
 }
-

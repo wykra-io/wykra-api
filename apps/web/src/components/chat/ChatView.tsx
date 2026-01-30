@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { ChangeEvent, FormEvent, RefObject } from 'react';
 
 import type { ChatMessage } from '../../types';
@@ -5,6 +6,8 @@ import { ChatMessageContent } from './ChatMessageContent';
 
 type Props = {
   messages: ChatMessage[];
+  focusMessageId?: string | null;
+  onFocusMessageHandled?: () => void;
   chatInput: string;
   chatSending: boolean;
   activeTaskId: string | null;
@@ -16,6 +19,8 @@ type Props = {
 
 export function ChatView({
   messages,
+  focusMessageId,
+  onFocusMessageHandled,
   chatInput,
   chatSending,
   activeTaskId,
@@ -24,8 +29,51 @@ export function ChatView({
   onChatInputChange,
   onSubmit,
 }: Props) {
+  const lastHandledFocusIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!focusMessageId) return;
+    if (lastHandledFocusIdRef.current === focusMessageId) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    let timeoutId: number | null = null;
+
+    const attrValue = focusMessageId.replace(/"/g, '\\"');
+
+    const tryScroll = () => {
+      if (cancelled) return;
+      const el = document.querySelector<HTMLElement>(
+        `[data-chat-message-id="${attrValue}"]`,
+      );
+
+      if (el) {
+        lastHandledFocusIdRef.current = focusMessageId;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('chatMessageFocused');
+        window.setTimeout(
+          () => el.classList.remove('chatMessageFocused'),
+          1600,
+        );
+        onFocusMessageHandled?.();
+        return;
+      }
+
+      attempts += 1;
+      if (attempts >= 20) return;
+      timeoutId = window.setTimeout(tryScroll, 120);
+    };
+
+    tryScroll();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [focusMessageId, messages.length, onFocusMessageHandled]);
+
   return (
-    <div className="card" style={{ marginTop: 24, flex: 1, minHeight: 0 }}>
+    <div className="card" style={{ flex: 1, minHeight: 0 }}>
       <div className="chatContainer">
         <div className="chatMessages">
           {messages.length === 0 ? (
@@ -38,6 +86,7 @@ export function ChatView({
             messages.map((message) => (
               <div
                 key={message.id}
+                data-chat-message-id={message.id}
                 className={`chatMessage chatMessage${message.role === 'user' ? 'User' : 'Assistant'}`}
               >
                 <div className="chatMessageContent">
@@ -66,7 +115,9 @@ export function ChatView({
               }`}
             >
               {chatSending || !!activeTaskId ? (
-                <div className="chatSendButtonSpinner" />
+                <span className="chatSendButtonDots" aria-hidden="true">
+                  ...
+                </span>
               ) : (
                 <svg
                   width="18"

@@ -11,8 +11,8 @@ import {
 import { SentryClientService } from '@libs/sentry';
 
 import { MetricsService } from '../metrics';
-import { PerplexityService } from '../perplexity';
 import { InstagramService } from './instagram.service';
+import { InstagramWebSearchService } from './instagram-web-search.service';
 
 interface InstagramSearchJobData {
   taskId: string;
@@ -32,17 +32,75 @@ interface InstagramProfileJobData {
 @Processor(QueueName.Instagram)
 export class InstagramProcessor {
   private readonly logger = new Logger(InstagramProcessor.name);
-  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
-  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   constructor(
     private readonly tasksRepo: TasksRepository,
     private readonly sentry: SentryClientService,
-    private readonly perplexityService: PerplexityService,
     private readonly instagramService: InstagramService,
     private readonly searchProfilesRepo: InstagramSearchProfilesRepository,
     private readonly metricsService: MetricsService,
+    private readonly webSearchService: InstagramWebSearchService,
   ) {}
+
+  /**
+   * Finds previously discovered Instagram profile URLs for similar search contexts.
+   *
+   * "Similar" here means same category, location, and followers_range (if present),
+   * based on the structured context stored in completed instagram_search task results.
+   */
+  private async getExcludedInstagramUrlsForContext(
+    context: { category: string | null; location: string | null; followers_range: string | null },
+  ): Promise<string[]> {
+    const results = new Set<string>();
+
+    // Look at a reasonable number of recent completed tasks to avoid heavy scans.
+    const recentTasks = await this.tasksRepo.findRecentCompleted(50);
+
+    for (const task of recentTasks) {
+      if (!task.result) continue;
+
+      try {
+        const parsed = JSON.parse(task.result) as {
+          context?: {
+            category?: string | null;
+            location?: string | null;
+            followers_range?: string | null;
+          };
+          analyzedProfiles?: Array<{ profileUrl?: string }>;
+        };
+
+        if (!parsed.context || !parsed.analyzedProfiles) continue;
+
+        const sameCategory =
+          (parsed.context.category || '').trim().toLowerCase() ===
+          (context.category || '').trim().toLowerCase();
+        const sameLocation =
+          (parsed.context.location || '').trim().toLowerCase() ===
+          (context.location || '').trim().toLowerCase();
+        const sameFollowersRange =
+          (parsed.context.followers_range || '').trim() ===
+          (context.followers_range || '').trim();
+
+        if (!sameCategory || !sameLocation || !sameFollowersRange) {
+          continue;
+        }
+
+        for (const profile of parsed.analyzedProfiles) {
+          if (
+            profile?.profileUrl &&
+            typeof profile.profileUrl === 'string' &&
+            profile.profileUrl.includes('instagram.com')
+          ) {
+            results.add(profile.profileUrl);
+          }
+        }
+      } catch {
+        // Ignore malformed results from unrelated tasks
+      }
+    }
+
+    return Array.from(results);
+  }
 
   /**
    * Processes an Instagram search job.
@@ -66,22 +124,6 @@ export class InstagramProcessor {
     );
 
     try {
-      if (InstagramProcessor.SEARCH_PROFILES_DISABLED) {
-        await this.tasksRepo.update(taskId, {
-          status: TaskStatus.Failed,
-          error: 'Instagram profile search is currently disabled.',
-          completedAt: new Date(),
-        });
-        this.metricsService.recordTaskStatusChange(
-          'failed',
-          'instagram_search',
-        );
-        this.logger.warn(
-          `Instagram search task ${taskId} skipped (disabled). Query: ${query}`,
-        );
-        return;
-      }
-
       // Update task status to running
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,
@@ -100,6 +142,10 @@ export class InstagramProcessor {
       if (!context.category) {
         throw new Error('Category is required to perform Instagram search');
       }
+
+      // Determine which profiles to exclude based on similar past searches
+      const excludedInstagramUrls =
+        await this.getExcludedInstagramUrlsForContext(context);
 
       // Build a precise search prompt for Perplexity using extracted context
       const categoryPart = `who post about ${context.category}`;
@@ -122,17 +168,25 @@ export class InstagramProcessor {
        *  If uncertain, exclude the account.
        *  Return only the list of URLs with no extra text"
        */
+      const excludePart =
+        excludedInstagramUrls.length > 0
+          ? `\nExclude these profiles that were already found in previous similar searches:\n${excludedInstagramUrls
+              .slice(0, 20)
+              .join('\n')}\n`
+          : '';
+
       const stage1Prompt = `Find public Instagram accounts ${locationPart} ${categoryPart}${followersPart}.
 
-Only include accounts for which you have a verified direct URL to instagram.com from credible web sources.
-(Return only Instagram URLs that appear in these external sources.)
-Do not invent usernames.
-If uncertain, exclude the account.
-Return only the list of URLs with no extra text.`;
+Only include accounts with verified instagram.com URLs from credible sources.
+${excludePart}Return ONLY URLs, one per line, no explanations.
+Do not invent usernames.`;
 
-      const stage1Response = await this.perplexityService.chat({
-        message: stage1Prompt,
-      });
+console.log(stage1Prompt);
+
+      const stage1Response = await this.webSearchService.searchUrls(
+        stage1Prompt,
+        1,
+      );
 
       const urlRegex = /https?:\/\/[^\s]+/g;
 
@@ -146,12 +200,20 @@ Return only the list of URLs with no extra text.`;
       );
 
       // Fetch detailed profile data for Stage 1 URLs via BrightData
-      const stage1Profiles =
+      let stage1Profiles =
         instagramUrlsStage1.length > 0
           ? await this.instagramService.collectProfilesByUrls(
               instagramUrlsStage1,
             )
           : [];
+
+      if (!stage1Profiles.length && instagramUrlsStage1.length > 0) {
+        this.logger.warn(
+          `BrightData collectProfilesByUrls returned no profiles for ${instagramUrlsStage1.length} urls, falling back to per-profile scrape`,
+        );
+        stage1Profiles =
+          await this.instagramService.fetchProfilesForUrls(instagramUrlsStage1);
+      }
 
       // Parse Instagram profile URLs from BrightData profiles
       const parsedInstagramUrlsStage1 = stage1Profiles
@@ -165,107 +227,19 @@ Return only the list of URLs with no extra text.`;
         })
         .filter((url): url is string => !!url && url.includes('instagram.com'));
 
-      let combinedProfiles = [...stage1Profiles];
-      let combinedInstagramUrls = [...new Set(instagramUrlsStage1)];
+      // Stage 2 is disabled - only use Stage 1 results
+      const combinedProfiles = [...stage1Profiles];
+      const combinedInstagramUrls = [...new Set(instagramUrlsStage1)];
 
-      /**
-       * STAGE 2: Fallback search using the previous, more permissive prompt
-       * Triggered only if we have fewer than 5 unique Instagram URLs
-       * parsed from BrightData profiles in Stage 1.
-       */
-      let stage2Prompt: string | null = null;
-      let stage2ResponseContent: string | null = null;
-      let stage2Usage: {
+      // Stage 2 variables (kept for backwards compatibility in result JSON)
+      const stage2Prompt: string | null = null;
+      const stage2ResponseContent: string | null = null;
+      type UsageStats = {
         promptTokens: number;
         completionTokens: number;
         totalTokens: number;
-      } | null = null;
-
-      if (parsedInstagramUrlsStage1.length < 5) {
-        const baseInstruction = `Find public Instagram accounts ${locationPart} ${categoryPart}${followersPart}.`;
-
-        stage2Prompt = `${baseInstruction}
-
-Use open-web search results and external sources such as websites, Linktree/Beacons, YouTube/TikTok links, or press mentions to identify their Instagram handles.
-
-Return only Instagram URLs that appear in these external sources. 
-
-Do not invent usernames.
-
-If uncertain, exclude the account. 
-
-Return only the list of URLs with no extra text.`;
-
-        const stage2Response = await this.perplexityService.chat({
-          message: stage2Prompt,
-        });
-
-        // Metrics are already recorded in PerplexityService.chat()
-        // But we log the usage for debugging
-        this.logger.log(
-          `Stage 2 Perplexity call completed. Usage: ${JSON.stringify(stage2Response.usage)}`,
-        );
-
-        stage2ResponseContent = stage2Response.content;
-        stage2Usage = stage2Response.usage
-          ? {
-              promptTokens: stage2Response.usage.promptTokens || 0,
-              completionTokens: stage2Response.usage.completionTokens || 0,
-              totalTokens: stage2Response.usage.totalTokens || 0,
-            }
-          : {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-            };
-
-        const allUrlsStage2 =
-          typeof stage2ResponseContent === 'string'
-            ? stage2ResponseContent.match(urlRegex) || []
-            : [];
-        const instagramUrlsStage2 = allUrlsStage2.filter((url) =>
-          url.toLowerCase().includes('instagram.com'),
-        );
-
-        // Deduplicate URLs between stages
-        const newStage2Urls = instagramUrlsStage2.filter(
-          (url) => !combinedInstagramUrls.includes(url),
-        );
-
-        const stage2Profiles =
-          newStage2Urls.length > 0
-            ? await this.instagramService.collectProfilesByUrls(newStage2Urls)
-            : [];
-
-        // Merge profiles, preferring first occurrence
-        const profileByUrl = new Map<string, unknown>();
-
-        const addProfilesToMap = (profiles: unknown[]) => {
-          for (const profile of profiles) {
-            const obj = profile as Record<string, unknown>;
-            const profileUrl =
-              (typeof obj.profile_url === 'string' && obj.profile_url) ||
-              (typeof obj.url === 'string' && obj.url) ||
-              null;
-
-            if (
-              profileUrl &&
-              profileUrl.includes('instagram.com') &&
-              !profileByUrl.has(profileUrl)
-            ) {
-              profileByUrl.set(profileUrl, profile);
-            }
-          }
-        };
-
-        addProfilesToMap(stage1Profiles);
-        addProfilesToMap(stage2Profiles);
-
-        combinedProfiles = Array.from(profileByUrl.values());
-        combinedInstagramUrls = Array.from(
-          new Set([...combinedInstagramUrls, ...instagramUrlsStage2]),
-        );
-      }
+      };
+      const stage2Usage: UsageStats | null = null;
 
       // Run short Anthropic analysis for each collected profile and
       // persist each profile to the database as it is analyzed
@@ -291,6 +265,12 @@ Return only the list of URLs with no extra text.`;
           };
 
       // Task completed successfully
+      const stage2UsageSafe: UsageStats = stage2Usage ?? {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+      };
+
       const result = JSON.stringify({
         query,
         context,
@@ -309,12 +289,13 @@ Return only the list of URLs with no extra text.`;
           total: {
             promptTokens:
               (stage1Usage.promptTokens || 0) +
-              (stage2Usage?.promptTokens || 0),
+              (stage2UsageSafe.promptTokens || 0),
             completionTokens:
               (stage1Usage.completionTokens || 0) +
-              (stage2Usage?.completionTokens || 0),
+              (stage2UsageSafe.completionTokens || 0),
             totalTokens:
-              (stage1Usage.totalTokens || 0) + (stage2Usage?.totalTokens || 0),
+              (stage1Usage.totalTokens || 0) +
+              (stage2UsageSafe.totalTokens || 0),
           },
         },
         model: stage1Response.model,

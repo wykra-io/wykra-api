@@ -1,6 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage } from '@langchain/core/messages';
-import { GoneException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 
@@ -17,6 +17,7 @@ import {
   InstagramSearchProfilesRepository,
   TasksRepository,
 } from '@libs/repositories';
+import { BrightdataService } from '../brightdata';
 import { MetricsService } from '../metrics';
 
 import {
@@ -24,6 +25,7 @@ import {
   InstagramAnalysisResult,
   InstagramProfile,
 } from './interfaces';
+import { normalizeInstagramUsername } from './utils/instagram.utils';
 
 interface InstagramSearchContext {
   category: string | null;
@@ -34,6 +36,10 @@ interface InstagramSearchContext {
 
 export interface InstagramProfileAnalysis {
   profileUrl: string;
+  followers: number | null;
+  postsCount: number | null;
+  avgEngagement: number | null;
+  profileImageUrl: string | null;
   analysis: {
     summary: string;
     score: number;
@@ -45,11 +51,10 @@ export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
   private readonly httpClient: AxiosInstance | null;
   private readonly llmClient: ChatOpenAI | null;
-  // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
-  private static readonly SEARCH_PROFILES_DISABLED = true;
 
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
+    private readonly brightdataService: BrightdataService,
     private readonly openrouterConfig: OpenrouterConfigService,
     private readonly sentry: SentryClientService,
     private readonly queueService: QueueService,
@@ -125,13 +130,22 @@ export class InstagramService {
    */
   public async analyzeProfile(profile: string): Promise<InstagramAnalysisData> {
     try {
-      this.logger.log(`Starting analysis for Instagram profile: ${profile}`);
+      const normalizedProfile = normalizeInstagramUsername(profile);
+      if (!normalizedProfile) {
+        throw new Error(
+          'Invalid Instagram profile. Provide a username or full profile URL.',
+        );
+      }
 
-      const profileData = await this.fetchProfileData(profile);
+      this.logger.log(
+        `Starting analysis for Instagram profile: ${profile} (normalized=${normalizedProfile})`,
+      );
+
+      const profileData = await this.fetchProfileData(normalizedProfile);
       const analysis = await this.processWithLLM(profileData);
 
       return {
-        profile,
+        profile: normalizedProfile,
         data: profileData,
         analysis,
       };
@@ -147,6 +161,13 @@ export class InstagramService {
    * Creates a new Instagram suspicious comments analysis job and queues it for processing.
    */
   public async commentsSuspicious(profile: string): Promise<string> {
+    const normalizedProfile = normalizeInstagramUsername(profile);
+    if (!normalizedProfile) {
+      throw new Error(
+        'Invalid Instagram profile. Provide a username or full profile URL.',
+      );
+    }
+
     const taskId = randomUUID();
 
     await this.tasksRepo.create({
@@ -160,7 +181,7 @@ export class InstagramService {
 
     await this.queueService.instagram.add('comments_suspicious', {
       taskId,
-      profile,
+      profile: normalizedProfile,
     });
 
     this.metricsService.recordTaskCreated('instagram_comments_suspicious');
@@ -178,11 +199,18 @@ export class InstagramService {
    */
   public async analyzeSuspiciousComments(profile: string): Promise<unknown> {
     try {
+      const normalizedProfile = normalizeInstagramUsername(profile);
+      if (!normalizedProfile) {
+        throw new Error(
+          'Invalid Instagram profile. Provide a username or full profile URL.',
+        );
+      }
+
       this.logger.log(
-        `Starting suspicious comments analysis for Instagram profile: ${profile}`,
+        `Starting suspicious comments analysis for Instagram profile: ${profile} (normalized=${normalizedProfile})`,
       );
 
-      const profileData = await this.fetchProfileData(profile);
+      const profileData = await this.fetchProfileData(normalizedProfile);
       const p = profileData as unknown as Record<string, unknown>;
 
       // Extract post URLs from the profile (use the canonical interface field first, but be defensive)
@@ -219,7 +247,7 @@ export class InstagramService {
           `No post URLs found for profile ${profile} to scrape comments`,
         );
         return {
-          profile,
+          profile: normalizedProfile,
           postsAnalyzed: 0,
           message: 'No posts found to analyze comments',
         };
@@ -293,7 +321,7 @@ export class InstagramService {
       }
 
       return {
-        profile,
+        profile: normalizedProfile,
         postsAnalyzed: postUrls.length,
         totalComments: allComments.length,
         postUrls,
@@ -641,108 +669,199 @@ User query: '${query}'`;
     }
   }
 
+  /** Timeout for single-profile scrape (analyze): up to 15 min. */
+  private static readonly PROFILE_SCRAPE_TIMEOUT_MS = 15 * 60 * 1000;
+  private static readonly PROFILE_SCRAPE_MAX_RETRIES = 3;
+  private static readonly PROFILE_SCRAPE_RETRY_DELAY_MS = 3000;
+
   /**
    * Fetches profile data from BrightData scraper API for Instagram.
+   * Uses 15 min timeout and retries on status or request failure.
    *
    * @param {string} profile - The Instagram profile username.
    *
    * @returns {Promise<InstagramProfile>} The raw profile data from the API.
    */
   private async fetchProfileData(profile: string): Promise<InstagramProfile> {
-    const startTime = Date.now();
-    try {
-      this.logger.log(`Fetching Instagram profile data for: ${profile}`);
-
-      // BrightData Instagram scraper API endpoint
-      const endpoint = `/datasets/v3/scrape`;
-      const datasetId = BrightdataDataset.INSTAGRAM;
-
-      // Request body structure as per BrightData API
-      const requestBody = {
-        input: [{ user_name: profile }],
-      };
-
-      // Query parameters
-      const params = {
-        dataset_id: datasetId,
-        notify: 'false',
-        include_errors: 'true',
-        type: 'discover_new',
-        discover_by: 'user_name',
-      };
-
-      const response = await this.ensureHttpClient().post<unknown>(
-        endpoint,
-        requestBody,
-        {
-          params,
-        },
-      );
-
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.recordBrightdataCall(
-        BrightdataDataset.INSTAGRAM,
-        'fetch_profile_data',
-        duration,
-      );
-
-      this.logger.log(`Successfully fetched data for profile: ${profile}`);
-
-      // BrightData returns an array with profile data, extract the first item
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        return response.data[0] as InstagramProfile;
-      }
-
-      // If it's a single object, return it directly
-      if (response.data && typeof response.data === 'object') {
-        return response.data as InstagramProfile;
-      }
-
+    const normalizedProfile = normalizeInstagramUsername(profile);
+    if (!normalizedProfile) {
       throw new Error(
-        'Unexpected response format from BrightData API. Expected array with profile data or single profile object.',
+        'Invalid Instagram profile. Provide a username or full profile URL.',
       );
-    } catch (error) {
-      const axiosError = error as AxiosError;
+    }
 
-      if (axiosError.response) {
-        // API responded with error status
-        const status = axiosError.response.status;
-        const statusText = axiosError.response.statusText;
-        const responseData = axiosError.response.data;
+    this.logger.log(
+      `Fetching Instagram profile data for: ${profile} (normalized=${normalizedProfile})`,
+    );
 
-        this.logger.error(
-          `BrightData API error for profile ${profile}: ${status} - ${statusText}`,
-          responseData,
+    const endpoint = `/datasets/v3/scrape`;
+    const datasetId = BrightdataDataset.INSTAGRAM;
+    const requestBody = {
+      input: [{ user_name: normalizedProfile }],
+    };
+    const params = {
+      dataset_id: datasetId,
+      notify: 'false',
+      include_errors: 'true',
+      type: 'discover_new',
+      discover_by: 'user_name',
+    };
+
+    let lastError: unknown;
+    for (
+      let attempt = 1;
+      attempt <= InstagramService.PROFILE_SCRAPE_MAX_RETRIES;
+      attempt++
+    ) {
+      const startTime = Date.now();
+      try {
+        const response = await this.ensureHttpClient().post<unknown>(
+          endpoint,
+          requestBody,
+          {
+            params,
+            timeout: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
+          },
         );
+
+        const duration = (Date.now() - startTime) / 1000;
+        this.metricsService.recordBrightdataCall(
+          BrightdataDataset.INSTAGRAM,
+          'fetch_profile_data',
+          duration,
+        );
+
+        this.logger.log(
+          `Successfully fetched data for profile: ${profile} (normalized=${normalizedProfile})`,
+        );
+
+        if (Array.isArray(response.data) && response.data.length > 0) {
+          const item = response.data[0] as unknown;
+          if (item && typeof item === 'object') {
+            const obj = item as Record<string, unknown>;
+            const hasExpectedFields =
+              typeof obj.profile_url === 'string' ||
+              typeof obj.profile_name === 'string' ||
+              typeof obj.account === 'string';
+
+            if (!hasExpectedFields) {
+              const err =
+                (typeof obj.error === 'string' && obj.error) ||
+                (typeof obj.message === 'string' && obj.message) ||
+                null;
+              throw new Error(
+                err
+                  ? `Instagram scraper error: ${err}`
+                  : 'Instagram scraper error: unexpected response from scraper',
+              );
+            }
+          }
+
+          return item as InstagramProfile;
+        }
+
+        if (response.data && typeof response.data === 'object') {
+          const obj = response.data as Record<string, unknown>;
+          const hasExpectedFields =
+            typeof obj.profile_url === 'string' ||
+            typeof obj.profile_name === 'string' ||
+            typeof obj.account === 'string';
+
+          if (!hasExpectedFields) {
+            const err =
+              (typeof obj.error === 'string' && obj.error) ||
+              (typeof obj.message === 'string' && obj.message) ||
+              null;
+            throw new Error(
+              err
+                ? `Instagram scraper error: ${err}`
+                : 'Instagram scraper error: unexpected response from scraper',
+            );
+          }
+
+          return response.data as InstagramProfile;
+        }
 
         throw new Error(
-          `Failed to fetch Instagram profile: ${statusText} (${status})`,
+          'Unexpected response format from BrightData API. Expected array with profile data or single profile object.',
         );
-      } else if (axiosError.request) {
-        // Request was made but no response received
-        this.logger.error(
-          `No response from BrightData API for profile ${profile}`,
+      } catch (error) {
+        lastError = error;
+        const axiosError = error as AxiosError;
+        const msg =
+          axiosError.response != null
+            ? `${axiosError.response.status} - ${axiosError.response.statusText}`
+            : axiosError.request != null
+              ? 'No response from Instagram scraper API'
+              : (axiosError.message ?? String(error));
+
+        this.logger.warn(
+          `BrightData profile scrape attempt ${attempt}/${InstagramService.PROFILE_SCRAPE_MAX_RETRIES} for ${profile}: ${msg}`,
         );
 
-        throw new Error('No response from Instagram scraper API');
-      } else {
-        // Error setting up the request
-        this.logger.error(
-          `Error setting up request for profile ${profile}:`,
-          axiosError.message,
-        );
+        if (attempt < InstagramService.PROFILE_SCRAPE_MAX_RETRIES) {
+          await new Promise((r) =>
+            setTimeout(r, InstagramService.PROFILE_SCRAPE_RETRY_DELAY_MS),
+          );
+          continue;
+        }
 
+        if (axiosError.response) {
+          throw new Error(
+            `Failed to fetch Instagram profile: ${axiosError.response.statusText} (${axiosError.response.status})`,
+          );
+        }
+        if (axiosError.request) {
+          throw new Error('No response from Instagram scraper API');
+        }
         throw new Error(
-          `Failed to fetch Instagram profile: ${axiosError.message}`,
+          `Failed to fetch Instagram profile: ${axiosError.message ?? String(error)}`,
         );
       }
     }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Instagram profile scrape failed after retries');
+  }
+
+  /**
+   * Convenience helper: fetches Instagram profiles for a list of profile URLs
+   * by normalizing each URL to a username and calling the scraper.
+   *
+   * Used as a fallback when BrightData's "collect by URL" mode returns no items.
+   */
+  public async fetchProfilesForUrls(
+    urls: string[],
+  ): Promise<InstagramProfile[]> {
+    const results: InstagramProfile[] = [];
+
+    for (const url of urls) {
+      const username = normalizeInstagramUsername(url);
+      if (!username) {
+        continue;
+      }
+
+      try {
+        const profile = await this.fetchProfileData(username);
+        results.push(profile);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch Instagram profile via fallback for URL: ${url} (username=${username})`,
+          error instanceof Error ? error.stack : String(error),
+        );
+        this.sentry.sendException(error, { url, username, source: 'fallback' });
+      }
+    }
+
+    return results;
   }
 
   /**
    * Collects Instagram profile data from BrightData by profile URLs.
    *
-   * Uses the "Instagram - Profiles - collect by URL" mode of the Instagram dataset.
+   * Uses async flow: trigger → poll progress (up to 20 min) → download snapshot,
+   * with retries on progress and download errors so the task is not failed by transient issues.
    *
    * @param {string[]} urls - Array of Instagram profile URLs to collect.
    *
@@ -753,128 +872,42 @@ User query: '${query}'`;
       return [];
     }
 
-    const startTime = Date.now();
-    try {
-      this.logger.log(
-        `Collecting Instagram profiles by URL from BrightData for ${urls.length} urls`,
-      );
+    this.logger.log(
+      `Collecting Instagram profiles by URL from BrightData for ${urls.length} urls (async trigger → poll → download, up to 20 min)`,
+    );
 
-      const endpoint = `/datasets/v3/scrape`;
-      const datasetId = BrightdataDataset.INSTAGRAM;
+    const triggerBody = urls.map((url) => ({ url }));
+    const params: Record<string, string> = {
+      notify: 'false',
+      include_errors: 'true',
+      type: 'url_collection',
+    };
 
-      // BrightData "collect by URL" mode expects profile URLs in the input
-      const requestBody = {
-        input: urls.map((url) => ({ url })),
-      };
+    const rawItems = await this.brightdataService.runDatasetTriggerAndDownload(
+      BrightdataDataset.INSTAGRAM,
+      triggerBody,
+      params,
+      'collect_profiles_by_urls',
+      {
+        timeoutMs: 20 * 60 * 1000,
+        pollIntervalMs: 5000,
+        maxRetries: 3,
+      },
+    );
 
-      const params = {
-        dataset_id: datasetId,
-        notify: 'false',
-        include_errors: 'true',
-        type: 'url_collection',
-      };
+    // Skip error entries like {"error_code":"dead_page", ...}
+    const items = (rawItems as Record<string, unknown>[]).filter(
+      (obj) =>
+        obj &&
+        typeof obj === 'object' &&
+        !('error_code' in obj && obj.error_code),
+    );
 
-      const response = await this.ensureHttpClient().post<unknown>(
-        endpoint,
-        requestBody,
-        {
-          params,
-        },
-      );
+    this.logger.log(
+      `Collected ${items.length} Instagram profiles by URL (${urls.length} urls requested)`,
+    );
 
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.recordBrightdataCall(
-        BrightdataDataset.INSTAGRAM,
-        'collect_profiles_by_urls',
-        duration,
-      );
-
-      this.logger.log(
-        `Successfully collected Instagram profiles by URL for ${urls.length} urls`,
-      );
-
-      const data = response.data;
-
-      // BrightData often returns NDJSON (newline-delimited JSON) as a string
-      if (typeof data === 'string') {
-        const lines = data
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0);
-
-        const items: unknown[] = [];
-
-        for (const line of lines) {
-          try {
-            const obj = JSON.parse(line) as Record<string, unknown>;
-
-            // Skip error entries like {"error_code":"dead_page", ...}
-            if (obj.error_code) {
-              continue;
-            }
-
-            items.push(obj);
-          } catch {
-            // Ignore malformed lines, we'll just skip them
-          }
-        }
-
-        if (items.length > 0) {
-          return items;
-        }
-      }
-
-      if (Array.isArray(data)) {
-        return data as unknown[];
-      }
-
-      if (data && typeof data === 'object') {
-        return [data] as unknown[];
-      }
-
-      this.logger.warn(
-        'Unexpected response format from BrightData collectProfilesByUrls, returning empty array',
-      );
-      return [];
-    } catch (error) {
-      const axiosError = error as AxiosError;
-
-      if (axiosError.response) {
-        const status = axiosError.response.status;
-        const statusText = axiosError.response.statusText;
-        const responseData = axiosError.response.data;
-
-        this.logger.error(
-          `BrightData API error for collectProfilesByUrls: ${status} - ${statusText}`,
-          responseData,
-        );
-
-        this.sentry.sendException(error, { urls });
-
-        throw new Error(
-          `Failed to collect Instagram profiles by URL: ${statusText} (${status})`,
-        );
-      } else if (axiosError.request) {
-        this.logger.error(
-          'No response from BrightData API for collectProfilesByUrls',
-        );
-
-        this.sentry.sendException(error, { urls });
-
-        throw new Error('No response from Instagram collect-by-URL API');
-      } else {
-        this.logger.error(
-          'Error setting up request for collectProfilesByUrls:',
-          axiosError.message,
-        );
-
-        this.sentry.sendException(error, { urls });
-
-        throw new Error(
-          `Failed to collect Instagram profiles by URL: ${axiosError.message}`,
-        );
-      }
-    }
+    return items;
   }
 
   /**
@@ -922,6 +955,8 @@ User query: '${query}'`;
       const followers = typeof p.followers === 'number' ? p.followers : null;
       const postsCount =
         typeof p.posts_count === 'number' ? p.posts_count : null;
+      const profileImageUrl =
+        typeof p.profile_image_link === 'string' ? p.profile_image_link : null;
       const isPrivate = typeof p.is_private === 'boolean' ? p.is_private : null;
       const isBusinessAccount =
         typeof p.is_business_account === 'boolean'
@@ -1059,8 +1094,13 @@ Where:
           score = 3;
         }
 
-        const analysis = {
+        const analysis: InstagramProfileAnalysis = {
           profileUrl,
+          followers,
+          postsCount,
+          avgEngagement:
+            typeof p.avg_engagement === 'number' ? p.avg_engagement : null,
+          profileImageUrl,
           analysis: {
             summary,
             score,
@@ -1070,29 +1110,27 @@ Where:
         analyses.push(analysis);
 
         // Persist this profile immediately after analysis
-        if (!InstagramService.SEARCH_PROFILES_DISABLED) {
-          try {
-            await this.searchProfilesRepo.createMany([
-              {
-                taskId,
-                account,
-                profileUrl,
-                followers,
-                isPrivate,
-                isBusinessAccount,
-                isProfessionalAccount,
-                analysisSummary: summary,
-                analysisScore: score,
-                raw: JSON.stringify(p),
-              },
-            ]);
-          } catch (saveError) {
-            this.logger.error(
-              `Failed to save InstagramSearchProfile for ${profileUrl}`,
-              saveError,
-            );
-            this.sentry.sendException(saveError, { profileUrl, taskId });
-          }
+        try {
+          await this.searchProfilesRepo.createMany([
+            {
+              taskId,
+              account,
+              profileUrl,
+              followers,
+              isPrivate,
+              isBusinessAccount,
+              isProfessionalAccount,
+              analysisSummary: summary,
+              analysisScore: score,
+              raw: JSON.stringify(p),
+            },
+          ]);
+        } catch (saveError) {
+          this.logger.error(
+            `Failed to save InstagramSearchProfile for ${profileUrl}`,
+            saveError,
+          );
+          this.sentry.sendException(saveError, { profileUrl, taskId });
         }
       } catch (error) {
         this.metricsService.recordLLMError(
@@ -1109,6 +1147,11 @@ Where:
 
         analyses.push({
           profileUrl,
+          followers,
+          postsCount,
+          avgEngagement:
+            typeof p.avg_engagement === 'number' ? p.avg_engagement : null,
+          profileImageUrl,
           analysis: {
             summary: `Analysis failed for ${account} (${profileUrl}).`,
             score: 2,
@@ -1401,15 +1444,6 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
    * @returns {Promise<string>} The task ID.
    */
   public async search(query: string): Promise<string> {
-    if (InstagramService.SEARCH_PROFILES_DISABLED) {
-      this.logger.warn(
-        `Instagram search requested while disabled. Query=${JSON.stringify(query)}`,
-      );
-      throw new GoneException(
-        'Instagram profile search is currently disabled.',
-      );
-    }
-
     const taskId = randomUUID();
 
     // Create task record in database
@@ -1438,6 +1472,13 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
    * Creates a new Instagram profile analysis job and queues it for processing.
    */
   public async profile(profile: string): Promise<string> {
+    const normalizedProfile = normalizeInstagramUsername(profile);
+    if (!normalizedProfile) {
+      throw new Error(
+        'Invalid Instagram profile. Provide a username or full profile URL.',
+      );
+    }
+
     const taskId = randomUUID();
 
     await this.tasksRepo.create({
@@ -1451,7 +1492,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
 
     await this.queueService.instagram.add('profile', {
       taskId,
-      profile,
+      profile: normalizedProfile,
     });
 
     this.metricsService.recordTaskCreated('instagram_profile');

@@ -9,5 +9,3 @@ export class SocialAuthDto {
   @IsIn(['telegram'])
   provider!: 'telegram';
 }
-
-

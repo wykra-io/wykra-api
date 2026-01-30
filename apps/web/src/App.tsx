@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { AuthModal } from './components/AuthModal';
-import { Footer } from './components/Footer';
+import { SideMenu } from './components/SideMenu';
 import { Topbar } from './components/Topbar';
 import { ChatView } from './components/chat/ChatView';
+import { AdminDashboard } from './components/AdminDashboard';
 import { getApiToken } from './api';
 import { useAuth } from './hooks/useAuth';
 import { useChat } from './hooks/useChat';
@@ -15,6 +16,7 @@ import {
 
 export function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const { isAuthed, me, startGithubSignIn, telegramSignIn, logout } = useAuth();
   const chat = useChat({ enabled: isAuthed });
 
@@ -38,51 +40,92 @@ export function App() {
   }, [telegramSignIn]);
 
   return (
-    <div className="container">
+    <div className="page">
       {isTelegramMiniApp() ? null : (
-        <Topbar
-          isAuthed={isAuthed}
-          me={me}
-          hideSignIn={isTelegramMiniApp()}
-          onOpenSignIn={() => setAuthModalOpen(true)}
-          onLogout={() => void logout()}
-        />
-      )}
-
-      {!isAuthed ? (
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textAlign: 'center',
-            padding: '48px 16px',
-          }}
-        >
-          <div>
-            <h2 style={{ margin: '0 0 16px 0', color: '#0f172a' }}>
-              Welcome to Wykra
-            </h2>
-            <p className="muted" style={{ margin: '0 0 24px 0', fontSize: 16 }}>
-              Sign in to start
-            </p>
+        <header className="header">
+          <div className="headerInner">
+            <Topbar
+              isAuthed={isAuthed}
+              me={me}
+              hideSignIn={isTelegramMiniApp()}
+              onOpenSignIn={() => setAuthModalOpen(true)}
+              onLogout={() => void logout()}
+            />
           </div>
-        </div>
-      ) : (
-        <ChatView
-          messages={chat.messages}
-          chatInput={chat.chatInput}
-          chatSending={chat.chatSending}
-          activeTaskId={chat.activeTaskId}
-          canSend={chat.canSend}
-          chatEndRef={chat.chatEndRef}
-          onChatInputChange={chat.onChatInputChange}
-          onSubmit={(e) => void chat.onSubmit(e)}
-        />
+        </header>
       )}
 
-      {isTelegramMiniApp() ? null : <Footer />}
+      <main className="main">
+        {isTelegramMiniApp() || !isAuthed ? null : (
+          <SideMenu
+            sessions={chat.sessions}
+            activeSessionId={chat.activeSessionId}
+            onSelectSession={(id) => {
+              setShowDashboard(false);
+              chat.clearFocusMessageId();
+              chat.setActiveSessionId(id);
+            }}
+            onSelectSessionRequest={(
+              sessionId: number,
+              requestMessageId: string,
+            ) => {
+              setShowDashboard(false);
+              chat.openSessionRequest(sessionId, requestMessageId);
+            }}
+            successRequestsBySessionId={chat.successRequestsBySessionId}
+            successRequestsLoadingBySessionId={
+              chat.successRequestsLoadingBySessionId
+            }
+            onRenameSession={(sessionId: number, title: string) =>
+              void chat.renameSession(sessionId, title)
+            }
+            onDeleteSession={(sessionId: number) =>
+              void chat.deleteSession(sessionId)
+            }
+            onNewSession={() => {
+              setShowDashboard(false);
+              void chat.createNewSession();
+            }}
+            isAdmin={me?.isAdmin ?? false}
+            onShowDashboard={() => setShowDashboard(true)}
+            showDashboard={showDashboard}
+          />
+        )}
+        <div className="mainInner">
+          {!isAuthed ? (
+            <div className="authCard">
+              <h1 className="title">Welcome to Wykra</h1>
+              <p className="subtitle">Sign in to start.</p>
+              {isTelegramMiniApp() ? null : (
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="primaryBtn"
+                    onClick={() => setAuthModalOpen(true)}
+                  >
+                    Sign in
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : showDashboard && (me?.isAdmin ?? false) ? (
+            <AdminDashboard />
+          ) : (
+            <ChatView
+              messages={chat.messages}
+              focusMessageId={chat.focusMessageId}
+              onFocusMessageHandled={chat.clearFocusMessageId}
+              chatInput={chat.chatInput}
+              chatSending={chat.chatSending}
+              activeTaskId={chat.activeTaskId}
+              canSend={chat.canSend}
+              chatEndRef={chat.chatEndRef}
+              onChatInputChange={chat.onChatInputChange}
+              onSubmit={(e) => void chat.onSubmit(e)}
+            />
+          )}
+        </div>
+      </main>
 
       <AuthModal
         open={authModalOpen}

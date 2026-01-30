@@ -6,7 +6,9 @@ import {
 } from '@nestjs/throttler';
 import type { ExecutionContext } from '@nestjs/common';
 import { createHash } from 'crypto';
+import type { Request } from 'express';
 
+import { User } from '@libs/entities';
 import { IS_PUBLIC_KEY, SKIP_THROTTLE_KEY } from '../constants';
 
 @Injectable()
@@ -29,12 +31,20 @@ export class ApiTokenThrottlerGuard extends ThrottlerGuard {
     );
     if (skipThrottle) return true;
 
+    // Skip throttling for admin users
+    const req = context.switchToHttp().getRequest<Request & { user?: User }>();
+    if (req?.user?.isAdmin) {
+      return true;
+    }
+
     // Never throttle Prometheus scraping from Railway internal network.
-    const req = context.switchToHttp().getRequest();
     const url: string = req?.originalUrl || req?.url || '';
     if (url === '/metrics' || url.startsWith('/metrics?')) {
-      const rawHost: string =
+      const rawHostRaw =
         req?.headers?.['x-forwarded-host'] || req?.headers?.host || '';
+      const rawHost = Array.isArray(rawHostRaw)
+        ? rawHostRaw[0]
+        : rawHostRaw || '';
       const host = String(rawHost).split(',')[0]?.trim().split(':')[0] || '';
       if (host.endsWith('.railway.internal')) {
         return true;

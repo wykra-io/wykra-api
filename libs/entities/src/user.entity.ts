@@ -50,4 +50,7 @@ export class User extends Model {
     select: false,
   })
   apiTokenCreatedAt!: Date | null;
+
+  @Column({ name: 'is_admin', type: 'boolean', default: false })
+  isAdmin!: boolean;
 }

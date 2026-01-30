@@ -6,5 +6,3 @@ export default registerAs('telegram', () => ({
   // Telegram WebApp initData verification uses "WebAppData"
   hmacKey: 'WebAppData',
 }));
-
-

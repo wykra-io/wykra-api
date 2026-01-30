@@ -10,6 +10,7 @@ import { AppConfigModule, DbConfigModule, DbConfigService } from '@libs/config';
 import {
   ChatMessage,
   ChatTask,
+  ChatSession,
   InstagramSearchProfile,
   Task,
   TikTokSearchProfile,
@@ -26,10 +27,12 @@ import { TikTokModule } from '../tiktok';
 import { MetricsModule, MetricsInterceptor } from '../metrics';
 import { PerplexityModule } from '../perplexity';
 import { TasksModule } from '../tasks';
+import { AdminModule } from '../admin';
 
 @Module({
   imports: [
     AppConfigModule,
+    AdminModule,
     AuthModule,
     BrightdataModule,
     CacheModule.register(),
@@ -64,6 +67,7 @@ import { TasksModule } from '../tasks';
           entities: [
             ChatMessage,
             ChatTask,
+            ChatSession,
             Task,
             InstagramSearchProfile,
             TikTokSearchProfile,

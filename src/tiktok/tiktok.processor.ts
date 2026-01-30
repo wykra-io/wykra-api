@@ -29,7 +29,19 @@ interface TikTokCommentsSuspiciousJobData {
 export class TikTokProcessor {
   private readonly logger = new Logger(TikTokProcessor.name);
   // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
-  private static readonly SEARCH_PROFILES_DISABLED = true;
+  private static readonly SEARCH_PROFILES_DISABLED = false;
+  private static readonly RETRYABLE_ERROR_PATTERNS: RegExp[] = [
+    /brightdata/i,
+    /timed out/i,
+    /timeout/i,
+    /econnreset/i,
+    /etimedout/i,
+    /enotfound/i,
+    /eai_again/i,
+    /socket hang up/i,
+    /\b429\b/i,
+    /\b503\b/i,
+  ];
 
   constructor(
     private readonly tasksRepo: TasksRepository,
@@ -178,6 +190,32 @@ export class TikTokProcessor {
       );
 
       this.sentry.sendException(error, { taskId, query });
+
+      const totalAttempts =
+        typeof job.opts.attempts === 'number' && job.opts.attempts > 0
+          ? job.opts.attempts
+          : 1;
+      const attemptsMade =
+        typeof job.attemptsMade === 'number' ? job.attemptsMade : 0;
+      const hasRemainingAttempts = attemptsMade + 1 < totalAttempts;
+
+      const isRetryable =
+        hasRemainingAttempts &&
+        TikTokProcessor.RETRYABLE_ERROR_PATTERNS.some((re) =>
+          re.test(errorMessage),
+        );
+
+      if (isRetryable) {
+        // Mark back to pending so the UI doesn't show a permanent failure while Bull retries.
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Pending,
+          error: `Retrying (${attemptsMade + 1}/${totalAttempts}): ${errorMessage}`,
+          startedAt: null,
+          completedAt: null,
+        });
+        // Throw so Bull performs the retry attempt.
+        throw error;
+      }
 
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Failed,
