@@ -10,6 +10,12 @@ import { MetricsService } from '../../metrics';
 export class TikTokBrightdataService {
   private readonly logger = new Logger(TikTokBrightdataService.name);
   private readonly httpClient: AxiosInstance | null;
+  /** Default wait for snapshot. Profile analyze passes opts.timeoutMs: 15 min. */
+  private static readonly ASYNC_WAIT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+  private static readonly ASYNC_POLL_INTERVAL_MS = 5000;
+  private static readonly ASYNC_MAX_RETRIES = 3;
+  private static readonly ASYNC_RETRY_DELAY_MS = 2000;
+  private static readonly SNAPSHOT_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per download request
 
   constructor(
     private readonly brightdataConfig: BrightdataConfigService,
@@ -67,21 +73,79 @@ export class TikTokBrightdataService {
     return response.data;
   }
 
+  private async getSnapshotProgress(
+    snapshotId: string,
+    maxRetries: number,
+  ): Promise<{ status?: string; error?: unknown }> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const progress = await this.ensureHttpClient().get<{
+          status?: string;
+          error?: unknown;
+        }>(`/datasets/v3/progress/${snapshotId}`);
+        return progress.data ?? {};
+      } catch (err) {
+        lastErr = err;
+        this.logger.warn(
+          `BrightData progress attempt ${attempt}/${maxRetries} for snapshot ${snapshotId} failed`,
+          err instanceof Error ? err.message : String(err),
+        );
+        if (attempt < maxRetries) {
+          await this.sleep(TikTokBrightdataService.ASYNC_RETRY_DELAY_MS);
+        }
+      }
+    }
+
+    throw lastErr instanceof Error
+      ? lastErr
+      : new Error('BrightData progress check failed after retries');
+  }
+
   private async waitForSnapshot(
     snapshotId: string,
-    opts?: { timeoutMs?: number; pollIntervalMs?: number },
+    opts?: { timeoutMs?: number; pollIntervalMs?: number; maxRetries?: number },
   ): Promise<'ready'> {
-    const timeoutMs = opts?.timeoutMs ?? 5 * 60 * 1000; // 5 minutes
-    const pollIntervalMs = opts?.pollIntervalMs ?? 3000;
+    const timeoutMs =
+      opts?.timeoutMs ?? TikTokBrightdataService.ASYNC_WAIT_TIMEOUT_MS;
+    const pollIntervalMs =
+      opts?.pollIntervalMs ?? TikTokBrightdataService.ASYNC_POLL_INTERVAL_MS;
+    const maxRetries =
+      opts?.maxRetries ?? TikTokBrightdataService.ASYNC_MAX_RETRIES;
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeoutMs) {
-      const progress = await this.ensureHttpClient().get<{
-        status?: string;
-        error?: unknown;
-      }>(`/datasets/v3/progress/${snapshotId}`);
+      let progressData: { status?: string; error?: unknown } | undefined;
+      let lastErr: unknown;
 
-      const status = String(progress.data?.status || '').toLowerCase();
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const progress = await this.ensureHttpClient().get<{
+            status?: string;
+            error?: unknown;
+          }>(`/datasets/v3/progress/${snapshotId}`);
+          progressData = progress.data ?? {};
+          lastErr = undefined;
+          break;
+        } catch (err) {
+          lastErr = err;
+          this.logger.warn(
+            `BrightData progress attempt ${attempt}/${maxRetries} for snapshot ${snapshotId} failed`,
+            err instanceof Error ? err.message : String(err),
+          );
+          if (attempt < maxRetries) {
+            await this.sleep(TikTokBrightdataService.ASYNC_RETRY_DELAY_MS);
+          }
+        }
+      }
+
+      if (!progressData) {
+        throw lastErr instanceof Error
+          ? lastErr
+          : new Error('BrightData progress check failed after retries');
+      }
+
+      const status = String(progressData.status || '').toLowerCase();
 
       if (status === 'ready') {
         return 'ready';
@@ -90,7 +154,7 @@ export class TikTokBrightdataService {
       if (status === 'failed' || status === 'error') {
         throw new Error(
           `BrightData snapshot ${snapshotId} failed: ${JSON.stringify(
-            progress.data,
+            progressData,
           )}`,
         );
       }
@@ -98,7 +162,9 @@ export class TikTokBrightdataService {
       await this.sleep(pollIntervalMs);
     }
 
-    throw new Error(`Timed out waiting for BrightData snapshot ${snapshotId}`);
+    throw new Error(
+      `Timed out waiting for BrightData snapshot ${snapshotId} (${timeoutMs}ms)`,
+    );
   }
 
   private async downloadSnapshot(
@@ -109,6 +175,7 @@ export class TikTokBrightdataService {
       `/datasets/v3/snapshot/${snapshotId}`,
       {
         params: { format },
+        timeout: TikTokBrightdataService.SNAPSHOT_DOWNLOAD_TIMEOUT_MS,
         // allow large responses
         responseType: 'text',
         maxContentLength: Infinity,
@@ -146,42 +213,136 @@ export class TikTokBrightdataService {
     triggerBody: unknown[],
     params: Record<string, string>,
     metricName: string,
-    opts?: { timeoutMs?: number; pollIntervalMs?: number },
+    opts?: { timeoutMs?: number; pollIntervalMs?: number; maxRetries?: number },
   ): Promise<unknown[]> {
     const startTime = Date.now();
     try {
-      const { snapshot_id } = await this.triggerDataset(
-        datasetId,
-        triggerBody,
-        {
-          include_errors: 'true',
-          ...params,
-        },
-      );
+      const maxRetries =
+        opts?.maxRetries ?? TikTokBrightdataService.ASYNC_MAX_RETRIES;
 
-      await this.waitForSnapshot(snapshot_id, {
-        timeoutMs: opts?.timeoutMs ?? 25 * 60 * 1000,
-        pollIntervalMs: opts?.pollIntervalMs ?? 4000,
-      });
-
-      const downloaded = await this.downloadSnapshot(snapshot_id, 'json');
-
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.recordBrightdataCall(
-        String(datasetId),
-        metricName,
-        duration,
-      );
-
-      if (Array.isArray(downloaded)) {
-        return downloaded as unknown[];
+      let snapshot_id: string | null = null;
+      let lastTriggerError: unknown;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const resp = await this.triggerDataset(datasetId, triggerBody, {
+            include_errors: 'true',
+            ...params,
+          });
+          snapshot_id = resp.snapshot_id;
+          break;
+        } catch (err) {
+          lastTriggerError = err;
+          this.logger.warn(
+            `BrightData trigger attempt ${attempt}/${maxRetries} failed (dataset=${String(
+              datasetId,
+            )})`,
+            err instanceof Error ? err.message : String(err),
+          );
+          if (attempt < maxRetries) {
+            await this.sleep(TikTokBrightdataService.ASYNC_RETRY_DELAY_MS);
+          }
+        }
       }
 
-      if (downloaded && typeof downloaded === 'object') {
-        return [downloaded] as unknown[];
+      if (!snapshot_id) {
+        throw lastTriggerError instanceof Error
+          ? lastTriggerError
+          : new Error('BrightData trigger failed after retries');
       }
 
-      return [];
+      const timeoutMs =
+        opts?.timeoutMs ?? TikTokBrightdataService.ASYNC_WAIT_TIMEOUT_MS;
+      const pollIntervalMs =
+        opts?.pollIntervalMs ?? TikTokBrightdataService.ASYNC_POLL_INTERVAL_MS;
+
+      const deadline = Date.now() + timeoutMs;
+      let lastProgress: { status?: string; error?: unknown } | null = null;
+      let lastDownloadError: unknown = null;
+
+      // Robust flow: keep checking progress and retry downloads until deadline.
+      while (Date.now() < deadline) {
+        // Poll progress (with retries) so we can surface status and stop on hard failures.
+        lastProgress = await this.getSnapshotProgress(snapshot_id, maxRetries);
+        const status = String(lastProgress.status ?? '').toLowerCase();
+
+        if (status === 'failed' || status === 'error') {
+          throw new Error(
+            `BrightData snapshot ${snapshot_id} failed: ${JSON.stringify(
+              lastProgress,
+            )}`,
+          );
+        }
+
+        // If ready (or status is unknown but could be ready), attempt download with retries.
+        if (status === 'ready' || status === '') {
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              const downloaded = await this.downloadSnapshot(
+                snapshot_id,
+                'json',
+              );
+              lastDownloadError = null;
+
+              const duration = (Date.now() - startTime) / 1000;
+              this.metricsService.recordBrightdataCall(
+                String(datasetId),
+                metricName,
+                duration,
+              );
+
+              if (Array.isArray(downloaded)) {
+                return downloaded as unknown[];
+              }
+              if (downloaded && typeof downloaded === 'object') {
+                return [downloaded] as unknown[];
+              }
+              return [];
+            } catch (err) {
+              lastDownloadError = err;
+              this.logger.warn(
+                `BrightData download attempt ${attempt}/${maxRetries} failed for snapshot ${snapshot_id}`,
+                err instanceof Error ? err.message : String(err),
+              );
+              if (attempt < maxRetries) {
+                await this.sleep(TikTokBrightdataService.ASYNC_RETRY_DELAY_MS);
+              }
+            }
+          }
+        }
+
+        await this.sleep(pollIntervalMs);
+      }
+
+      // Final attempt: sometimes progress polling can be flaky; try download one last time.
+      try {
+        const downloaded = await this.downloadSnapshot(snapshot_id, 'json');
+        lastDownloadError = null;
+
+        const duration = (Date.now() - startTime) / 1000;
+        this.metricsService.recordBrightdataCall(
+          String(datasetId),
+          metricName,
+          duration,
+        );
+
+        if (Array.isArray(downloaded)) return downloaded as unknown[];
+        if (downloaded && typeof downloaded === 'object')
+          return [downloaded] as unknown[];
+        return [];
+      } catch (err) {
+        lastDownloadError = err;
+      }
+
+      const lastStatus = lastProgress
+        ? String(lastProgress.status ?? 'unknown')
+        : 'unknown';
+      throw new Error(
+        `Timed out waiting for BrightData snapshot ${snapshot_id} (${timeoutMs}ms). Last status=${lastStatus}. Last download error=${String(
+          lastDownloadError instanceof Error
+            ? lastDownloadError.message
+            : lastDownloadError,
+        )}`,
+      );
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
       this.metricsService.recordBrightdataCall(

@@ -22,6 +22,11 @@ import { normalizeTikTokProfileUrl } from './utils/tiktok.utils';
 
 export interface TikTokProfileAnalysis {
   profileUrl: string;
+  account?: string;
+  followers?: number | null;
+  videosCount?: number | null;
+  profileImageUrl?: string | null;
+  isPrivate?: boolean | null;
   analysis: {
     summary: string;
     score: number;
@@ -91,6 +96,10 @@ export class TikTokService {
         type: 'url_collection',
       },
       'fetch_profile_data',
+      {
+        timeoutMs: 15 * 60 * 1000,
+        maxRetries: 3,
+      },
     );
 
     if (items.length > 0 && items[0] && typeof items[0] === 'object') {
@@ -210,6 +219,19 @@ export class TikTokService {
         (typeof p.follower_count === 'number' && p.follower_count) ||
         null;
 
+      const videosCount =
+        (typeof p.videos_count === 'number' && p.videos_count) ||
+        (typeof p.video_count === 'number' && p.video_count) ||
+        (typeof p.posts_count === 'number' && p.posts_count) ||
+        null;
+
+      const profileImageUrl =
+        (typeof p.profile_pic_url === 'string' && p.profile_pic_url) ||
+        (typeof p.profile_image_link === 'string' && p.profile_image_link) ||
+        (typeof p.avatar_url === 'string' && p.avatar_url) ||
+        (typeof p.avatar === 'string' && p.avatar) ||
+        null;
+
       const isPrivate =
         (typeof p.is_private === 'boolean' && p.is_private) ||
         (typeof p.private_account === 'boolean' && p.private_account) ||
@@ -226,6 +248,11 @@ export class TikTokService {
 
         analyses.push({
           profileUrl,
+          account,
+          followers,
+          videosCount,
+          profileImageUrl,
+          isPrivate,
           analysis: { summary, score },
         });
 
@@ -261,6 +288,11 @@ export class TikTokService {
 
         analyses.push({
           profileUrl,
+          account,
+          followers,
+          videosCount,
+          profileImageUrl,
+          isPrivate,
           analysis: {
             summary: `Analysis failed for ${account} (${profileUrl}).`,
             score: 2,
@@ -400,10 +432,20 @@ export class TikTokService {
       completedAt: null,
     });
 
-    await this.queueService.tiktok.add('search', {
-      taskId,
-      query,
-    });
+    await this.queueService.tiktok.add(
+      'search',
+      {
+        taskId,
+        query,
+      },
+      {
+        // BrightData snapshot runs can take a long time; ensure the job isn't killed early.
+        timeout: 30 * 60 * 1000, // 30 minutes
+        // Keep explicit attempts/backoff here so search retries even if queue defaults change.
+        attempts: 3,
+        backoff: { type: 'fixed', delay: 60 * 1000 }, // 1 minute
+      },
+    );
 
     this.metricsService.recordTaskCreated('tiktok_search');
 

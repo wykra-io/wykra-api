@@ -1,3 +1,4 @@
+import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -19,6 +20,7 @@ import { ChatService } from './chat.service';
 
 @Module({
   imports: [
+    CacheModule.register(),
     OpenrouterConfigModule,
     SentryClientModule,
     MetricsModule,

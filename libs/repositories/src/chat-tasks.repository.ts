@@ -1,6 +1,6 @@
 import { Injectable, Inject, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { ChatTask } from '@libs/entities';
 
@@ -68,4 +68,24 @@ export class ChatTasksRepository {
       throw error;
     }
   }
+
+  public async nullifyChatMessageIds(
+    userId: number,
+    chatMessageIds: number[],
+  ): Promise<void> {
+    if (chatMessageIds.length === 0) return;
+    const startTime = Date.now();
+    try {
+      await this.repository.update(
+        { userId, chatMessageId: In(chatMessageIds) },
+        { chatMessageId: null },
+      );
+      const duration = (Date.now() - startTime) / 1000;
+      this.metrics?.recordDbQuery('update', 'ChatTask', duration);
+    } catch (error) {
+      this.metrics?.recordDbQueryError('update', 'ChatTask', 'update_error');
+      throw error;
+    }
+  }
 }
+

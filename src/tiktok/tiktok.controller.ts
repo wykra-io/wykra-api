@@ -1,11 +1,28 @@
-import { Body, Controller, Post, GoneException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Inject,
+  Post,
+  Req,
+  GoneException,
+} from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { ThrottlerException } from '@nestjs/throttler';
+import type { Request } from 'express';
 
+import { User } from '@libs/entities';
 import { SearchPostDto, TikTokProfileDTO } from './dto';
 import { TikTokService } from './tiktok.service';
 
+const SEARCH_RATE_LIMIT_TTL_SECONDS = 60 * 60; // 1 hour
+
 @Controller('tiktok')
 export class TikTokController {
-  constructor(private readonly tiktokService: TikTokService) {}
+  constructor(
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly tiktokService: TikTokService,
+  ) {}
 
   // NOTE: Search profiles functionality is temporarily disabled (kept in codebase, but blocked at runtime).
   private static readonly SEARCH_PROFILES_DISABLED = false;
@@ -26,23 +43,46 @@ export class TikTokController {
 
   /**
    * Creates a new TikTok search job.
+   * Rate limited to 1 per hour per user (shared with chat-triggered search).
    *
    * @param {SearchPostDto} dto - Search data containing the search query.
    *
    * @returns {Promise<{ taskId: string }>} The created task ID.
    */
   @Post('search')
-  public async search(@Body() dto: SearchPostDto): Promise<{ taskId: string }> {
+  public async search(
+    @Req() req: Request & { user?: User },
+    @Body() dto: SearchPostDto,
+  ): Promise<{ taskId: string }> {
     if (!dto.query || typeof dto.query !== 'string') {
       throw new Error('Query must be a non-empty string');
     }
 
     if (TikTokController.SEARCH_PROFILES_DISABLED) {
-      // Previously: const taskId = await this.tiktokService.search(dto.query);
       throw new GoneException('TikTok profile search is currently disabled.');
     }
 
+    const userId = req.user?.id;
+    if (userId != null) {
+      const key = `ratelimit:tiktok_search:${userId}`;
+      const existing = await this.cache.get(key);
+      if (existing !== undefined && existing !== null) {
+        throw new ThrottlerException(
+          'TikTok search is limited to 1 per hour. Please try again later.',
+        );
+      }
+    }
+
     const taskId = await this.tiktokService.search(dto.query);
+
+    if (userId != null) {
+      await this.cache.set(
+        `ratelimit:tiktok_search:${userId}`,
+        1,
+        SEARCH_RATE_LIMIT_TTL_SECONDS,
+      );
+    }
+
     return { taskId };
   }
 

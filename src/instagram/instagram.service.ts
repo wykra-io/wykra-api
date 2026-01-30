@@ -669,69 +669,99 @@ User query: '${query}'`;
     }
   }
 
+  /** Timeout for single-profile scrape (analyze): up to 15 min. */
+  private static readonly PROFILE_SCRAPE_TIMEOUT_MS = 15 * 60 * 1000;
+  private static readonly PROFILE_SCRAPE_MAX_RETRIES = 3;
+  private static readonly PROFILE_SCRAPE_RETRY_DELAY_MS = 3000;
+
   /**
    * Fetches profile data from BrightData scraper API for Instagram.
+   * Uses 15 min timeout and retries on status or request failure.
    *
    * @param {string} profile - The Instagram profile username.
    *
    * @returns {Promise<InstagramProfile>} The raw profile data from the API.
    */
   private async fetchProfileData(profile: string): Promise<InstagramProfile> {
-    const startTime = Date.now();
-    try {
-      const normalizedProfile = normalizeInstagramUsername(profile);
-      if (!normalizedProfile) {
-        throw new Error(
-          'Invalid Instagram profile. Provide a username or full profile URL.',
+    const normalizedProfile = normalizeInstagramUsername(profile);
+    if (!normalizedProfile) {
+      throw new Error(
+        'Invalid Instagram profile. Provide a username or full profile URL.',
+      );
+    }
+
+    this.logger.log(
+      `Fetching Instagram profile data for: ${profile} (normalized=${normalizedProfile})`,
+    );
+
+    const endpoint = `/datasets/v3/scrape`;
+    const datasetId = BrightdataDataset.INSTAGRAM;
+    const requestBody = {
+      input: [{ user_name: normalizedProfile }],
+    };
+    const params = {
+      dataset_id: datasetId,
+      notify: 'false',
+      include_errors: 'true',
+      type: 'discover_new',
+      discover_by: 'user_name',
+    };
+
+    let lastError: unknown;
+    for (
+      let attempt = 1;
+      attempt <= InstagramService.PROFILE_SCRAPE_MAX_RETRIES;
+      attempt++
+    ) {
+      const startTime = Date.now();
+      try {
+        const response = await this.ensureHttpClient().post<unknown>(
+          endpoint,
+          requestBody,
+          {
+            params,
+            timeout: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
+          },
         );
-      }
 
-      this.logger.log(
-        `Fetching Instagram profile data for: ${profile} (normalized=${normalizedProfile})`,
-      );
+        const duration = (Date.now() - startTime) / 1000;
+        this.metricsService.recordBrightdataCall(
+          BrightdataDataset.INSTAGRAM,
+          'fetch_profile_data',
+          duration,
+        );
 
-      // BrightData Instagram scraper API endpoint
-      const endpoint = `/datasets/v3/scrape`;
-      const datasetId = BrightdataDataset.INSTAGRAM;
+        this.logger.log(
+          `Successfully fetched data for profile: ${profile} (normalized=${normalizedProfile})`,
+        );
 
-      // Request body structure as per BrightData API
-      const requestBody = {
-        input: [{ user_name: normalizedProfile }],
-      };
+        if (Array.isArray(response.data) && response.data.length > 0) {
+          const item = response.data[0] as unknown;
+          if (item && typeof item === 'object') {
+            const obj = item as Record<string, unknown>;
+            const hasExpectedFields =
+              typeof obj.profile_url === 'string' ||
+              typeof obj.profile_name === 'string' ||
+              typeof obj.account === 'string';
 
-      // Query parameters
-      const params = {
-        dataset_id: datasetId,
-        notify: 'false',
-        include_errors: 'true',
-        type: 'discover_new',
-        discover_by: 'user_name',
-      };
+            if (!hasExpectedFields) {
+              const err =
+                (typeof obj.error === 'string' && obj.error) ||
+                (typeof obj.message === 'string' && obj.message) ||
+                null;
+              throw new Error(
+                err
+                  ? `Instagram scraper error: ${err}`
+                  : 'Instagram scraper error: unexpected response from scraper',
+              );
+            }
+          }
 
-      const response = await this.ensureHttpClient().post<unknown>(
-        endpoint,
-        requestBody,
-        {
-          params,
-        },
-      );
+          return item as InstagramProfile;
+        }
 
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.recordBrightdataCall(
-        BrightdataDataset.INSTAGRAM,
-        'fetch_profile_data',
-        duration,
-      );
-
-      this.logger.log(
-        `Successfully fetched data for profile: ${profile} (normalized=${normalizedProfile})`,
-      );
-
-      // BrightData returns an array with profile data, extract the first item
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        const item = response.data[0] as unknown;
-        if (item && typeof item === 'object') {
-          const obj = item as Record<string, unknown>;
+        if (response.data && typeof response.data === 'object') {
+          const obj = response.data as Record<string, unknown>;
           const hasExpectedFields =
             typeof obj.profile_url === 'string' ||
             typeof obj.profile_name === 'string' ||
@@ -748,73 +778,51 @@ User query: '${query}'`;
                 : 'Instagram scraper error: unexpected response from scraper',
             );
           }
+
+          return response.data as InstagramProfile;
         }
 
-        return item as InstagramProfile;
-      }
+        throw new Error(
+          'Unexpected response format from BrightData API. Expected array with profile data or single profile object.',
+        );
+      } catch (error) {
+        lastError = error;
+        const axiosError = error as AxiosError;
+        const msg =
+          axiosError.response != null
+            ? `${axiosError.response.status} - ${axiosError.response.statusText}`
+            : axiosError.request != null
+              ? 'No response from Instagram scraper API'
+              : (axiosError.message ?? String(error));
 
-      // If it's a single object, return it directly
-      if (response.data && typeof response.data === 'object') {
-        const obj = response.data as Record<string, unknown>;
-        const hasExpectedFields =
-          typeof obj.profile_url === 'string' ||
-          typeof obj.profile_name === 'string' ||
-          typeof obj.account === 'string';
+        this.logger.warn(
+          `BrightData profile scrape attempt ${attempt}/${InstagramService.PROFILE_SCRAPE_MAX_RETRIES} for ${profile}: ${msg}`,
+        );
 
-        if (!hasExpectedFields) {
-          const err =
-            (typeof obj.error === 'string' && obj.error) ||
-            (typeof obj.message === 'string' && obj.message) ||
-            null;
+        if (attempt < InstagramService.PROFILE_SCRAPE_MAX_RETRIES) {
+          await new Promise((r) =>
+            setTimeout(r, InstagramService.PROFILE_SCRAPE_RETRY_DELAY_MS),
+          );
+          continue;
+        }
+
+        if (axiosError.response) {
           throw new Error(
-            err
-              ? `Instagram scraper error: ${err}`
-              : 'Instagram scraper error: unexpected response from scraper',
+            `Failed to fetch Instagram profile: ${axiosError.response.statusText} (${axiosError.response.status})`,
           );
         }
-
-        return response.data as InstagramProfile;
-      }
-
-      throw new Error(
-        'Unexpected response format from BrightData API. Expected array with profile data or single profile object.',
-      );
-    } catch (error) {
-      const axiosError = error as AxiosError;
-
-      if (axiosError.response) {
-        // API responded with error status
-        const status = axiosError.response.status;
-        const statusText = axiosError.response.statusText;
-        const responseData = axiosError.response.data;
-
-        this.logger.error(
-          `BrightData API error for profile ${profile}: ${status} - ${statusText}`,
-          responseData,
-        );
-
+        if (axiosError.request) {
+          throw new Error('No response from Instagram scraper API');
+        }
         throw new Error(
-          `Failed to fetch Instagram profile: ${statusText} (${status})`,
-        );
-      } else if (axiosError.request) {
-        // Request was made but no response received
-        this.logger.error(
-          `No response from BrightData API for profile ${profile}`,
-        );
-
-        throw new Error('No response from Instagram scraper API');
-      } else {
-        // Error setting up the request
-        this.logger.error(
-          `Error setting up request for profile ${profile}:`,
-          axiosError.message,
-        );
-
-        throw new Error(
-          `Failed to fetch Instagram profile: ${axiosError.message}`,
+          `Failed to fetch Instagram profile: ${axiosError.message ?? String(error)}`,
         );
       }
     }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Instagram profile scrape failed after retries');
   }
 
   /**

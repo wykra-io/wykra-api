@@ -145,6 +145,157 @@ body {
   gap: 4px;
 }
 
+.sideMenuChatGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sideMenuChatRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sideMenuChatActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 0.2s ease, opacity 0.15s ease;
+}
+
+.sideMenuChatRow:hover .sideMenuChatActions {
+  max-width: 76px;
+  opacity: 1;
+}
+
+.sideMenuChatMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.sideMenuIconBtn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #475569;
+  font-weight: 900;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+}
+
+.sideMenuIconBtn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  border-color: #e2e8f0;
+}
+
+.sideMenuIconBtnDanger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.sideMenuChatEditRow {
+  padding: 6px 8px 8px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid #e2e8f0;
+}
+
+.sideMenuChatEditInput {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sideMenuChatEditHint {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.sideMenuChatTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sideMenuChatSubList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 10px;
+  margin-top: -2px;
+}
+
+.sideMenuChatSubItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  border: 0;
+}
+
+.sideMenuChatSubItem:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.sideMenuChatSubBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 18px;
+  border-radius: 6px;
+  background: rgba(66, 46, 99, 0.12);
+  color: var(--wykra-theme);
+  font-size: 10px;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.sideMenuChatSubBadge svg {
+  display: block;
+}
+
+.sideMenuChatSubText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sideMenuChatSubLoading {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
 .sideMenuChatItem {
   display: flex;
   align-items: center;
@@ -663,6 +814,10 @@ pre {
   border-bottom-left-radius: 4px;
 }
 
+.chatMessageFocused .chatMessageContent {
+  box-shadow: 0 0 0 3px rgba(66, 46, 99, 0.28);
+}
+
 .chatEndpointBadge {
   margin-top: 8px;
   padding: 4px 8px;
@@ -998,6 +1153,122 @@ pre {
 }
 
 .instagramSearchProfileSummary {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* TikTok Search Results Styles (match Instagram look) */
+.tiktokSearchResults {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tiktokSearchHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tiktokSearchContext {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tiktokSearchTag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.tiktokSearchProfiles {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tiktokSearchEmpty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.tiktokSearchProfile {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tiktokSearchProfile:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.tiktokSearchProfileHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tiktokSearchProfileInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tiktokSearchProfileLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #0f172a;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 14px;
+  transition: color 0.15s;
+}
+
+.tiktokSearchProfileLink:hover {
+  color: #3b82f6;
+}
+
+.tiktokSearchProfileLink svg {
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+.tiktokSearchProfileLink:hover svg {
+  color: #3b82f6;
+}
+
+.tiktokSearchProfileScore {
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tiktokSearchProfileSummary {
   font-size: 14px;
   line-height: 1.6;
   color: #475569;

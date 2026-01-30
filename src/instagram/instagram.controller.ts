@@ -1,11 +1,21 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Body, Controller, Inject, Post, Req } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { ThrottlerException } from '@nestjs/throttler';
+import type { Request } from 'express';
 
+import { User } from '@libs/entities';
 import { InstagramProfileDTO, SearchPostDto } from './dto';
 import { InstagramService } from './instagram.service';
 
+const SEARCH_RATE_LIMIT_TTL_SECONDS = 60 * 60; // 1 hour
+
 @Controller('instagram')
 export class InstagramController {
-  constructor(private readonly instagramService: InstagramService) {}
+  constructor(
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly instagramService: InstagramService,
+  ) {}
 
   /**
    * Creates a new Instagram profile analysis task (queued).
@@ -24,18 +34,42 @@ export class InstagramController {
 
   /**
    * Creates a new Instagram search job.
+   * Rate limited to 1 per hour per user (shared with chat-triggered search).
    *
    * @param {SearchPostDto} dto - Search data containing the search query.
    *
    * @returns {Promise<{ taskId: string }>} The created task ID.
    */
   @Post('search')
-  public async search(@Body() dto: SearchPostDto): Promise<{ taskId: string }> {
+  public async search(
+    @Req() req: Request & { user?: User },
+    @Body() dto: SearchPostDto,
+  ): Promise<{ taskId: string }> {
     if (!dto.query || typeof dto.query !== 'string') {
       throw new Error('Query must be a non-empty string');
     }
 
+    const userId = req.user?.id;
+    if (userId != null) {
+      const key = `ratelimit:instagram_search:${userId}`;
+      const existing = await this.cache.get(key);
+      if (existing !== undefined && existing !== null) {
+        throw new ThrottlerException(
+          'Instagram search is limited to 1 per hour. Please try again later.',
+        );
+      }
+    }
+
     const taskId = await this.instagramService.search(dto.query);
+
+    if (userId != null) {
+      await this.cache.set(
+        `ratelimit:instagram_search:${userId}`,
+        1,
+        SEARCH_RATE_LIMIT_TTL_SECONDS,
+      );
+    }
+
     return { taskId };
   }
 

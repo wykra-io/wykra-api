@@ -1,3 +1,4 @@
+import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -21,6 +22,7 @@ import { InstagramWebSearchService } from './instagram-web-search.service';
   imports: [
     BrightdataConfigModule,
     BrightdataModule,
+    CacheModule.register(),
     OpenrouterConfigModule,
     QueueModule,
     TypeOrmModule.forFeature([Task, InstagramSearchProfile]),

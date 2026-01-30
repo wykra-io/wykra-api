@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
@@ -40,6 +42,15 @@ const STRIP_DETECTED_ENDPOINT_JSON_RE =
 const STRIP_DETECTED_ENDPOINT_PLATFORM_MARKER_RE =
   /\[DETECTED_ENDPOINT:\s*(instagram|tiktok|none)\]/gi;
 
+const SEARCH_RATE_LIMIT_TTL_SECONDS = 60 * 60; // 1 hour
+
+export class SearchRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SearchRateLimitError';
+  }
+}
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -48,6 +59,7 @@ export class ChatService {
   private readonly processingMessageContent = 'Processing your request...';
 
   constructor(
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
     private readonly openrouterConfig: OpenrouterConfigService,
     private readonly sentry: SentryClientService,
     private readonly metricsService: MetricsService,
@@ -488,6 +500,25 @@ If you cannot extract a clear profile username, respond with:
     chatMessageId: number | null,
   ): Promise<string | null> {
     try {
+      if (endpoint === '/instagram/search') {
+        const key = `ratelimit:instagram_search:${userId}`;
+        const existing = await this.cache.get(key);
+        if (existing !== undefined && existing !== null) {
+          throw new SearchRateLimitError(
+            'Instagram search is limited to 1 per hour. Please try again later.',
+          );
+        }
+      }
+      if (endpoint === '/tiktok/search') {
+        const key = `ratelimit:tiktok_search:${userId}`;
+        const existing = await this.cache.get(key);
+        if (existing !== undefined && existing !== null) {
+          throw new SearchRateLimitError(
+            'TikTok search is limited to 1 per hour. Please try again later.',
+          );
+        }
+      }
+
       const endpointCallMap: Record<
         ChatEndpoint,
         (p: EndpointParams) => Promise<string>
@@ -509,6 +540,21 @@ If you cannot extract a clear profile username, respond with:
 
       const taskId = await endpointCallMap[endpoint](params);
 
+      if (endpoint === '/instagram/search' && taskId) {
+        await this.cache.set(
+          `ratelimit:instagram_search:${userId}`,
+          1,
+          SEARCH_RATE_LIMIT_TTL_SECONDS,
+        );
+      }
+      if (endpoint === '/tiktok/search' && taskId) {
+        await this.cache.set(
+          `ratelimit:tiktok_search:${userId}`,
+          1,
+          SEARCH_RATE_LIMIT_TTL_SECONDS,
+        );
+      }
+
       if (taskId) {
         await this.chatTasksRepo.create({
           userId,
@@ -522,6 +568,9 @@ If you cannot extract a clear profile username, respond with:
 
       return taskId;
     } catch (error) {
+      if (error instanceof SearchRateLimitError) {
+        throw error;
+      }
       this.logger.error(
         `Failed to call endpoint ${endpoint}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -532,15 +581,25 @@ If you cannot extract a clear profile username, respond with:
   /**
    * Polls task status and returns result when completed
    */
-  private async pollTaskStatus(taskId: string): Promise<{
+  private async pollTaskStatus(
+    taskId: string,
+    opts?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<{
     status: string;
     result?: unknown;
     error?: string;
   }> {
-    const maxAttempts = 60;
-    let attempts = 0;
+    const timeoutMs =
+      typeof opts?.timeoutMs === 'number' && opts.timeoutMs > 0
+        ? opts.timeoutMs
+        : 5 * 60 * 1000;
+    const intervalMs =
+      typeof opts?.intervalMs === 'number' && opts.intervalMs > 0
+        ? opts.intervalMs
+        : 5000;
+    const deadline = Date.now() + timeoutMs;
 
-    while (attempts < maxAttempts) {
+    while (Date.now() < deadline) {
       try {
         const { task } = await this.tasksService.getTaskStatus(taskId);
         if (!task) {
@@ -570,14 +629,12 @@ If you cannot extract a clear profile username, respond with:
           return { status: 'failed', error: task.error || 'Task failed' };
         }
 
-        await this.sleep(5000);
-        attempts++;
+        await this.sleep(intervalMs);
       } catch (error) {
         this.logger.warn(
           `Error polling task ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
         );
-        attempts++;
-        await this.sleep(5000);
+        await this.sleep(intervalMs);
       }
     }
 
@@ -591,7 +648,8 @@ If you cannot extract a clear profile username, respond with:
     startTime: number;
     sessionId?: number;
   }): Promise<ChatResponse> {
-    const { detectedEndpoint, userQuery, userId, startTime, sessionId } = params;
+    const { detectedEndpoint, userQuery, userId, startTime, sessionId } =
+      params;
     this.logger.log(`Detected endpoint call: ${detectedEndpoint}`);
 
     const extractedParams = await this.extractEndpointParameters(
@@ -623,12 +681,40 @@ If you cannot extract a clear profile username, respond with:
     });
     const processingMessageId = processingMsg?.id ?? null;
 
-    const taskId = await this.callEndpoint(
-      detectedEndpoint,
-      extractedParams,
-      userId,
-      processingMessageId,
-    );
+    let taskId: string | null = null;
+    try {
+      taskId = await this.callEndpoint(
+        detectedEndpoint,
+        extractedParams,
+        userId,
+        processingMessageId,
+      );
+    } catch (error) {
+      if (error instanceof SearchRateLimitError) {
+        const rateLimitMessage = error.message;
+        if (processingMessageId) {
+          await this.safeUpdateMessage(
+            processingMessageId,
+            { content: rateLimitMessage, detectedEndpoint: null },
+            'search rate limit',
+          );
+        } else {
+          await this.safeCreateMessage({
+            userId,
+            role: ChatMessageRole.Assistant,
+            content: rateLimitMessage,
+            detectedEndpoint: null,
+            sessionId,
+          });
+        }
+        const duration = (Date.now() - startTime) / 1000;
+        this.logger.log(
+          `Chat response generated in ${duration}s (rate limited)`,
+        );
+        return { response: rateLimitMessage };
+      }
+      throw error;
+    }
 
     if (!taskId) {
       const errorMessage =
@@ -842,7 +928,13 @@ If you cannot extract a clear profile username, respond with:
         );
       }
 
-      const taskResult = await this.pollTaskStatus(taskId);
+      const isTikTok =
+        typeof endpoint === 'string' && endpoint.includes('/tiktok/');
+      const taskResult = await this.pollTaskStatus(taskId, {
+        // TikTok scraping/LLM can take 10-20+ minutes; keep polling longer.
+        timeoutMs: isTikTok ? 30 * 60 * 1000 : 5 * 60 * 1000,
+        intervalMs: isTikTok ? 10_000 : 5_000,
+      });
 
       try {
         await this.chatTasksRepo.update(taskId, {
@@ -891,5 +983,47 @@ If you cannot extract a clear profile username, respond with:
 
   public async createSession(userId: number, title: string | null) {
     return await this.chatSessionsRepo.create({ userId, title });
+  }
+
+  public async updateSessionTitle(
+    userId: number,
+    sessionId: number,
+    title: string | null,
+  ): Promise<{ id: number; title: string | null }> {
+    const session = await this.chatSessionsRepo.findByUserIdAndId(
+      userId,
+      sessionId,
+    );
+    if (!session) {
+      throw new Error('Chat session not found');
+    }
+
+    const normalized =
+      typeof title === 'string' && title.trim().length > 0
+        ? title.trim()
+        : null;
+    await this.chatSessionsRepo.updateTitle(userId, sessionId, normalized);
+    return { id: sessionId, title: normalized };
+  }
+
+  public async deleteSession(userId: number, sessionId: number): Promise<void> {
+    const session = await this.chatSessionsRepo.findByUserIdAndId(
+      userId,
+      sessionId,
+    );
+    if (!session) {
+      throw new Error('Chat session not found');
+    }
+
+    const messages = await this.chatMessagesRepo.findByUserIdAndSessionId(
+      userId,
+      sessionId,
+    );
+    const messageIds = messages.map((m) => m.id);
+
+    // chat_tasks.chat_message_id is nullable; null it out before deleting messages
+    await this.chatTasksRepo.nullifyChatMessageIds(userId, messageIds);
+    await this.chatMessagesRepo.deleteByUserIdAndSessionId(userId, sessionId);
+    await this.chatSessionsRepo.deleteByUserIdAndId(userId, sessionId);
   }
 }

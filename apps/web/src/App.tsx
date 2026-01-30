@@ -62,11 +62,29 @@ export function App() {
             activeSessionId={chat.activeSessionId}
             onSelectSession={(id) => {
               setShowDashboard(false);
+              chat.clearFocusMessageId();
               chat.setActiveSessionId(id);
             }}
+            onSelectSessionRequest={(
+              sessionId: number,
+              requestMessageId: string,
+            ) => {
+              setShowDashboard(false);
+              chat.openSessionRequest(sessionId, requestMessageId);
+            }}
+            successRequestsBySessionId={chat.successRequestsBySessionId}
+            successRequestsLoadingBySessionId={
+              chat.successRequestsLoadingBySessionId
+            }
+            onRenameSession={(sessionId: number, title: string) =>
+              void chat.renameSession(sessionId, title)
+            }
+            onDeleteSession={(sessionId: number) =>
+              void chat.deleteSession(sessionId)
+            }
             onNewSession={() => {
               setShowDashboard(false);
-              chat.createNewSession();
+              void chat.createNewSession();
             }}
             isAdmin={me?.isAdmin ?? false}
             onShowDashboard={() => setShowDashboard(true)}
@@ -95,6 +113,8 @@ export function App() {
           ) : (
             <ChatView
               messages={chat.messages}
+              focusMessageId={chat.focusMessageId}
+              onFocusMessageHandled={chat.clearFocusMessageId}
               chatInput={chat.chatInput}
               chatSending={chat.chatSending}
               activeTaskId={chat.activeTaskId}

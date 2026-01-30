@@ -1,3 +1,4 @@
+import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -20,6 +21,7 @@ import { TikTokService } from './tiktok.service';
 @Module({
   imports: [
     BrightdataConfigModule,
+    CacheModule.register(),
     OpenrouterConfigModule,
     QueueModule,
     TypeOrmModule.forFeature([Task, TikTokSearchProfile]),
