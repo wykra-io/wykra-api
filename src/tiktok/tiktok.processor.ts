@@ -157,12 +157,48 @@ export class TikTokProcessor {
             )
           : [];
 
+      // Exclude private profiles and profiles rated 1/5 (same logic as Instagram).
+      // Sort remaining results by rating (highest first), then by followers.
+      const filteredProfiles = analyzedProfiles.filter((p) => {
+        if (p.isPrivate === true) return false;
+        const score =
+          typeof p.analysis?.score === 'number' &&
+          !Number.isNaN(p.analysis.score)
+            ? p.analysis.score
+            : 0;
+        return score > 1;
+      });
+
+      const sortedAnalyzedProfiles = [...filteredProfiles].sort((a, b) => {
+        const aScore =
+          typeof a.analysis?.score === 'number' &&
+          !Number.isNaN(a.analysis.score)
+            ? a.analysis.score
+            : 0;
+        const bScore =
+          typeof b.analysis?.score === 'number' &&
+          !Number.isNaN(b.analysis.score)
+            ? b.analysis.score
+            : 0;
+        if (aScore !== bScore) return bScore - aScore;
+
+        const aFollowers =
+          typeof a.followers === 'number' && !Number.isNaN(a.followers)
+            ? a.followers
+            : -1;
+        const bFollowers =
+          typeof b.followers === 'number' && !Number.isNaN(b.followers)
+            ? b.followers
+            : -1;
+        return bFollowers - aFollowers;
+      });
+
       const result = JSON.stringify({
         query,
         context,
         searchTerms,
         discoveredCount: discoveredProfiles.length,
-        analyzedProfiles,
+        analyzedProfiles: sortedAnalyzedProfiles,
       });
 
       const processingDuration = (Date.now() - startTime) / 1000;

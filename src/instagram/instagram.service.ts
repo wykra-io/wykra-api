@@ -40,6 +40,7 @@ export interface InstagramProfileAnalysis {
   postsCount: number | null;
   avgEngagement: number | null;
   profileImageUrl: string | null;
+  isPrivate: boolean | null;
   analysis: {
     summary: string;
     score: number;
@@ -1246,6 +1247,7 @@ Where:
           avgEngagement:
             typeof p.avg_engagement === 'number' ? p.avg_engagement : null,
           profileImageUrl,
+          isPrivate,
           analysis: {
             summary,
             score,
@@ -1297,6 +1299,7 @@ Where:
           avgEngagement:
             typeof p.avg_engagement === 'number' ? p.avg_engagement : null,
           profileImageUrl,
+          isPrivate,
           analysis: {
             summary: `Analysis failed for ${account} (${profileUrl}).`,
             score: 2,

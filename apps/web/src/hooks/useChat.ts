@@ -170,12 +170,6 @@ export function useChat({ enabled }: { enabled: boolean }) {
     setActiveSessionIdState(nextId);
   }, []);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    window.setTimeout(() => {
-      chatEndRef.current?.scrollIntoView({ behavior });
-    }, 100);
-  }, []);
-
   const loadSuccessRequestsForSession = useCallback(
     async (sessionId: number, { force }: { force?: boolean } = {}) => {
       if (!enabled || !sessionId) return;
@@ -245,9 +239,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
         ),
       }));
 
-      if (isInitialLoadRef.current && loadedMessages.length > 0) {
+      if (loadedMessages.length > 0) {
         isInitialLoadRef.current = false;
-        scrollToBottom('auto');
       }
 
       return loadedMessages;
@@ -257,7 +250,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
       );
       return null;
     }
-  }, [enabled, activeSessionId, scrollToBottom]);
+  }, [enabled, activeSessionId]);
 
   const loadSessions = useCallback(async () => {
     if (!enabled) return;
@@ -340,11 +333,6 @@ export function useChat({ enabled }: { enabled: boolean }) {
     isInitialLoadRef.current = true;
   }, [activeSessionId]);
 
-  // Scroll to bottom when new messages appear.
-  useEffect(() => {
-    if (messages.length > 0) scrollToBottom();
-  }, [messages, scrollToBottom]);
-
   useEffect(() => {
     if (!enabled || !activeTaskId) return;
 
@@ -416,7 +404,6 @@ export function useChat({ enabled }: { enabled: boolean }) {
             return next;
           });
 
-          scrollToBottom();
           setActiveTaskId(null);
         }
       } catch (error) {
@@ -444,7 +431,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
       window.clearInterval(pollInterval);
       window.clearTimeout(timeout);
     };
-  }, [activeTaskId, enabled, loadChatHistory, scrollToBottom]);
+  }, [activeTaskId, enabled, loadChatHistory]);
 
   const canSend = useMemo(
     () => enabled && !chatSending && !activeTaskId,
@@ -471,7 +458,6 @@ export function useChat({ enabled }: { enabled: boolean }) {
       setMessages((prev) => [...prev, userMessage]);
       setChatInput('');
       setChatSending(true);
-      scrollToBottom();
 
       try {
         const response = await apiPost<ChatPostResponse>(`/api/v1/chat`, {
@@ -482,8 +468,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
         const { taskId } = normalizeChatPostResponse(response);
         setActiveTaskId(taskId);
 
-        const updated = await loadChatHistory();
-        if (updated?.length) scrollToBottom();
+        await loadChatHistory();
       } catch (error) {
         const errorMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
@@ -497,7 +482,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
         window.setTimeout(() => chatInputRef.current?.focus(), 0);
       }
     },
-    [canSend, chatInput, loadChatHistory, scrollToBottom],
+    [canSend, chatInput, loadChatHistory],
   );
 
   const createNewSession = useCallback(async () => {
