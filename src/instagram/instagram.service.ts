@@ -674,9 +674,82 @@ User query: '${query}'`;
   private static readonly PROFILE_SCRAPE_MAX_RETRIES = 3;
   private static readonly PROFILE_SCRAPE_RETRY_DELAY_MS = 3000;
 
+  /** Message fragment Bright Data returns when scrape is still in progress. */
+  private static readonly STILL_IN_PROGRESS_MESSAGE = 'still in progress';
+
+  /**
+   * Normalizes raw snapshot download payload to a single Instagram profile.
+   * Handles array (takes first item) or single object; returns null if no valid profile.
+   */
+  private normalizeDownloadedSnapshotToProfile(
+    downloaded: unknown,
+  ): InstagramProfile | null {
+    const hasExpectedFields = (obj: Record<string, unknown>) =>
+      typeof obj.profile_url === 'string' ||
+      typeof obj.profile_name === 'string' ||
+      typeof obj.account === 'string';
+
+    if (Array.isArray(downloaded) && downloaded.length > 0) {
+      const item = downloaded[0];
+      if (
+        item &&
+        typeof item === 'object' &&
+        hasExpectedFields(item as Record<string, unknown>)
+      )
+        return item as InstagramProfile;
+    }
+    if (
+      downloaded &&
+      typeof downloaded === 'object' &&
+      hasExpectedFields(downloaded as Record<string, unknown>)
+    )
+      return downloaded as InstagramProfile;
+    return null;
+  }
+
+  /**
+   * Extracts snapshot_id from a Bright Data scrape response when it indicates "still in progress".
+   * Handles top-level object, array of items, or nested { data: [...] }.
+   */
+  private static getSnapshotIdIfInProgress(data: unknown): string | null {
+    const msg = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
+    const snapshotId = (obj: Record<string, unknown>) =>
+      typeof obj.snapshot_id === 'string' ? obj.snapshot_id : null;
+    const isInProgress = (obj: Record<string, unknown>) =>
+      msg(obj.message).includes(InstagramService.STILL_IN_PROGRESS_MESSAGE) ||
+      msg(obj.error).includes(InstagramService.STILL_IN_PROGRESS_MESSAGE);
+
+    const check = (obj: Record<string, unknown>) =>
+      isInProgress(obj) && snapshotId(obj) ? snapshotId(obj) : null;
+
+    if (data && typeof data === 'object') {
+      const obj = data as Record<string, unknown>;
+      const id = check(obj);
+      if (id) return id;
+      const nested = obj.data;
+      if (
+        Array.isArray(nested) &&
+        nested.length > 0 &&
+        nested[0] &&
+        typeof nested[0] === 'object'
+      )
+        return check(nested[0] as Record<string, unknown>) ?? null;
+    }
+    if (
+      Array.isArray(data) &&
+      data.length > 0 &&
+      data[0] &&
+      typeof data[0] === 'object'
+    )
+      return check(data[0] as Record<string, unknown>) ?? null;
+    return null;
+  }
+
   /**
    * Fetches profile data from BrightData scraper API for Instagram.
    * Uses 15 min timeout and retries on status or request failure.
+   * When Bright Data returns "still in progress" with a snapshot_id, waits for the snapshot
+   * via Monitor Progress then downloads via Download Snapshot instead of failing.
    *
    * @param {string} profile - The Instagram profile username.
    *
@@ -745,6 +818,29 @@ User query: '${query}'`;
               typeof obj.account === 'string';
 
             if (!hasExpectedFields) {
+              const snapshotId = InstagramService.getSnapshotIdIfInProgress(
+                response.data,
+              );
+              if (snapshotId) {
+                this.logger.log(
+                  `Instagram profile ${profile}: scrape still in progress, waiting for snapshot ${snapshotId}`,
+                );
+                const downloaded =
+                  await this.brightdataService.waitAndDownloadSnapshot(
+                    snapshotId,
+                    {
+                      timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
+                      pollIntervalMs: 5000,
+                      maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
+                    },
+                  );
+                const profileFromSnapshot =
+                  this.normalizeDownloadedSnapshotToProfile(downloaded);
+                if (profileFromSnapshot) return profileFromSnapshot;
+                throw new Error(
+                  'Instagram snapshot ready but did not contain valid profile data.',
+                );
+              }
               const err =
                 (typeof obj.error === 'string' && obj.error) ||
                 (typeof obj.message === 'string' && obj.message) ||
@@ -768,6 +864,29 @@ User query: '${query}'`;
             typeof obj.account === 'string';
 
           if (!hasExpectedFields) {
+            const snapshotId = InstagramService.getSnapshotIdIfInProgress(
+              response.data,
+            );
+            if (snapshotId) {
+              this.logger.log(
+                `Instagram profile ${profile}: scrape still in progress, waiting for snapshot ${snapshotId}`,
+              );
+              const downloaded =
+                await this.brightdataService.waitAndDownloadSnapshot(
+                  snapshotId,
+                  {
+                    timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
+                    pollIntervalMs: 5000,
+                    maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
+                  },
+                );
+              const profileFromSnapshot =
+                this.normalizeDownloadedSnapshotToProfile(downloaded);
+              if (profileFromSnapshot) return profileFromSnapshot;
+              throw new Error(
+                'Instagram snapshot ready but did not contain valid profile data.',
+              );
+            }
             const err =
               (typeof obj.error === 'string' && obj.error) ||
               (typeof obj.message === 'string' && obj.message) ||
@@ -787,7 +906,33 @@ User query: '${query}'`;
         );
       } catch (error) {
         lastError = error;
-        const axiosError = error as AxiosError;
+        const axiosError = error as AxiosError<unknown>;
+        const responseBody = axiosError.response?.data;
+        const snapshotIdFromError =
+          responseBody != null
+            ? InstagramService.getSnapshotIdIfInProgress(responseBody)
+            : null;
+        if (snapshotIdFromError) {
+          this.logger.log(
+            `Instagram profile ${profile}: scrape still in progress (from error response), waiting for snapshot ${snapshotIdFromError}`,
+          );
+          const downloaded =
+            await this.brightdataService.waitAndDownloadSnapshot(
+              snapshotIdFromError,
+              {
+                timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
+                pollIntervalMs: 5000,
+                maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
+              },
+            );
+          const profileFromSnapshot =
+            this.normalizeDownloadedSnapshotToProfile(downloaded);
+          if (profileFromSnapshot) return profileFromSnapshot;
+          throw new Error(
+            'Instagram snapshot ready but did not contain valid profile data.',
+          );
+        }
+
         const msg =
           axiosError.response != null
             ? `${axiosError.response.status} - ${axiosError.response.statusText}`
