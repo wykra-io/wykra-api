@@ -275,6 +275,8 @@ export function AdminDashboard() {
                               ? '#10b981'
                               : task.status === 'failed'
                                 ? '#ef4444'
+                                : task.status === 'cancelled'
+                                  ? '#f59e0b'
                                 : task.status === 'running'
                                   ? '#3b82f6'
                                   : '#64748b',

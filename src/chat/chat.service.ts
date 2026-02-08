@@ -641,6 +641,10 @@ If you cannot extract a clear profile username, respond with:
           return { status: 'failed', error: task.error || 'Task failed' };
         }
 
+        if (task.status === TaskStatus.Cancelled) {
+          return { status: 'cancelled', error: task.error || 'Task cancelled' };
+        }
+
         await this.sleep(intervalMs);
       } catch (error) {
         this.logger.warn(
@@ -911,6 +915,13 @@ If you cannot extract a clear profile username, respond with:
 
     if (status === 'failed') {
       return `Task failed: ${error || 'Unknown error'}`;
+    }
+
+    if (status === 'cancelled') {
+      const isSearch =
+        typeof endpoint === 'string' && endpoint.includes('/search');
+      const label = isSearch ? 'Search cancelled' : 'Analyze cancelled';
+      return label;
     }
 
     if (status === 'timeout') {

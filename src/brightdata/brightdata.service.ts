@@ -53,6 +53,25 @@ export class BrightdataService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  private sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+    if (!signal) return this.sleep(ms);
+    if (signal.aborted) {
+      throw new Error('Aborted');
+    }
+    return new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(t);
+        signal.removeEventListener('abort', onAbort);
+        reject(new Error('Aborted'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
   /** Default wait timeout: 20 minutes. Poll/status and download calls use retries. */
   private static readonly ASYNC_WAIT_TIMEOUT_MS = 20 * 60 * 1000;
   private static readonly ASYNC_POLL_INTERVAL_MS = 5000;
@@ -73,6 +92,7 @@ export class BrightdataService {
       timeoutMs?: number;
       pollIntervalMs?: number;
       maxRetries?: number;
+      signal?: AbortSignal;
     },
   ): Promise<unknown> {
     const timeoutMs =
@@ -80,14 +100,16 @@ export class BrightdataService {
     const pollIntervalMs =
       opts?.pollIntervalMs ?? BrightdataService.ASYNC_POLL_INTERVAL_MS;
     const maxRetries = opts?.maxRetries ?? BrightdataService.ASYNC_MAX_RETRIES;
+    const signal = opts?.signal;
 
     await this.waitForSnapshotWithRetries(snapshotId, {
       timeoutMs,
       pollIntervalMs,
       maxRetries,
+      signal,
     });
 
-    return this.downloadSnapshotWithRetries(snapshotId, maxRetries);
+    return this.downloadSnapshotWithRetries(snapshotId, maxRetries, signal);
   }
 
   /**
@@ -103,6 +125,7 @@ export class BrightdataService {
       timeoutMs?: number;
       pollIntervalMs?: number;
       maxRetries?: number;
+      signal?: AbortSignal;
     },
   ): Promise<unknown[]> {
     const startTime = Date.now();
@@ -111,6 +134,7 @@ export class BrightdataService {
     const pollIntervalMs =
       opts?.pollIntervalMs ?? BrightdataService.ASYNC_POLL_INTERVAL_MS;
     const maxRetries = opts?.maxRetries ?? BrightdataService.ASYNC_MAX_RETRIES;
+    const signal = opts?.signal;
 
     try {
       const { snapshot_id } = await this.triggerDatasetWithRetries(
@@ -118,17 +142,20 @@ export class BrightdataService {
         triggerBody,
         { include_errors: 'true', ...params },
         maxRetries,
+        signal,
       );
 
       await this.waitForSnapshotWithRetries(snapshot_id, {
         timeoutMs,
         pollIntervalMs,
         maxRetries,
+        signal,
       });
 
       const downloaded = await this.downloadSnapshotWithRetries(
         snapshot_id,
         maxRetries,
+        signal,
       );
 
       const duration = (Date.now() - startTime) / 1000;
@@ -171,14 +198,19 @@ export class BrightdataService {
     triggerBody: unknown[],
     params: Record<string, string>,
     maxRetries: number,
+    signal?: AbortSignal,
   ): Promise<{ snapshot_id: string }> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        if (signal?.aborted) {
+          throw new Error('Aborted');
+        }
         const response = await this.ensureHttpClient().post<{
           snapshot_id: string;
         }>('/datasets/v3/trigger', triggerBody, {
           params: { dataset_id: datasetId, ...params },
+          signal,
         });
         if (!response.data?.snapshot_id) {
           throw new Error('BrightData trigger did not return snapshot_id');
@@ -191,7 +223,10 @@ export class BrightdataService {
           err instanceof Error ? err.message : String(err),
         );
         if (attempt < maxRetries) {
-          await this.sleep(BrightdataService.ASYNC_RETRY_DELAY_MS);
+          await this.sleepAbortable(
+            BrightdataService.ASYNC_RETRY_DELAY_MS,
+            signal,
+          );
         }
       }
     }
@@ -204,20 +239,27 @@ export class BrightdataService {
       timeoutMs: number;
       pollIntervalMs: number;
       maxRetries: number;
+      signal?: AbortSignal;
     },
   ): Promise<void> {
-    const { timeoutMs, pollIntervalMs, maxRetries } = opts;
+    const { timeoutMs, pollIntervalMs, maxRetries, signal } = opts;
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeoutMs) {
+      if (signal?.aborted) {
+        throw new Error('Aborted');
+      }
       let progress: { status?: string; error?: unknown } | undefined;
       let lastErr: unknown;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
+          if (signal?.aborted) {
+            throw new Error('Aborted');
+          }
           const res = await this.ensureHttpClient().get<{
             status?: string;
             error?: unknown;
-          }>(`/datasets/v3/progress/${snapshotId}`);
+          }>(`/datasets/v3/progress/${snapshotId}`, { signal });
           progress = res.data ?? {};
           lastErr = undefined;
           break;
@@ -228,7 +270,10 @@ export class BrightdataService {
             err instanceof Error ? err.message : String(err),
           );
           if (attempt < maxRetries) {
-            await this.sleep(BrightdataService.ASYNC_RETRY_DELAY_MS);
+            await this.sleepAbortable(
+              BrightdataService.ASYNC_RETRY_DELAY_MS,
+              signal,
+            );
           }
         }
       }
@@ -251,7 +296,7 @@ export class BrightdataService {
         );
       }
 
-      await this.sleep(pollIntervalMs);
+      await this.sleepAbortable(pollIntervalMs, signal);
     }
 
     throw new Error(
@@ -262,10 +307,14 @@ export class BrightdataService {
   private async downloadSnapshotWithRetries(
     snapshotId: string,
     maxRetries: number,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        if (signal?.aborted) {
+          throw new Error('Aborted');
+        }
         const response = await this.ensureHttpClient().get<unknown>(
           `/datasets/v3/snapshot/${snapshotId}`,
           {
@@ -273,6 +322,7 @@ export class BrightdataService {
             responseType: 'text',
             maxContentLength: Infinity,
             maxBodyLength: Infinity,
+            signal,
           },
         );
         const body = response.data as string;
@@ -288,7 +338,10 @@ export class BrightdataService {
           err instanceof Error ? err.message : String(err),
         );
         if (attempt < maxRetries) {
-          await this.sleep(BrightdataService.ASYNC_RETRY_DELAY_MS);
+          await this.sleepAbortable(
+            BrightdataService.ASYNC_RETRY_DELAY_MS,
+            signal,
+          );
         }
       }
     }

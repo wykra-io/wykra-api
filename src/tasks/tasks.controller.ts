@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Param,
   HttpStatus,
   HttpException,
@@ -58,6 +59,24 @@ export class TasksController {
       completedAt: task.completedAt,
       instagramProfiles: sanitizedProfiles,
       tiktokProfiles: sanitizedTikTokProfiles,
+    };
+  }
+
+  /**
+   * Stops (cancels) a running/queued task.
+   *
+   * Marks the task as cancelled, removes it from queues if still pending,
+   * and aborts any in-flight BrightData/OpenRouter calls in this process.
+   */
+  @Post(':id/stop')
+  public async stopTask(@Param('id') id: string) {
+    const task = await this.tasksService.stopTask(id);
+    return {
+      taskId: task.taskId,
+      status: task.status,
+      error: task.error,
+      startedAt: task.startedAt,
+      completedAt: task.completedAt,
     };
   }
 }

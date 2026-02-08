@@ -1,8 +1,11 @@
+import { useState } from 'react';
+
 type Props = {
   open: boolean;
   onClose: () => void;
   onGithubSignIn: () => void;
   onTelegramSignIn?: () => void;
+  onEmailSignIn: (email: string, password: string, isRegister: boolean) => Promise<void>;
 };
 
 export function AuthModal({
@@ -10,8 +13,89 @@ export function AuthModal({
   onClose,
   onGithubSignIn,
   onTelegramSignIn,
+  onEmailSignIn,
 }: Props) {
+  const [isRegister, setIsRegister] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   if (!open) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (isRegister && password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await onEmailSignIn(email, password, isRegister);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const togglePasswordVisibility = () => setShowPassword(!showPassword);
+
+  const PasswordIcon = () => (
+    <button
+      type="button"
+      onClick={togglePasswordVisibility}
+      style={{
+        position: 'absolute',
+        right: 12,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        padding: 0,
+        display: 'flex',
+        alignItems: 'center',
+        color: '#666',
+      }}
+    >
+      {showPassword ? (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </svg>
+      ) : (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      )}
+    </button>
+  );
 
   return (
     <div
@@ -47,7 +131,157 @@ export function AuthModal({
             </svg>
           </button>
         </div>
-        <div style={{ marginTop: 16 }}>
+
+        <form onSubmit={handleSubmit} style={{ marginTop: 24 }}>
+          <div style={{ marginBottom: 16 }}>
+            <label
+              htmlFor="email"
+              style={{ display: 'block', marginBottom: 8, fontSize: 14 }}
+            >
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: 6,
+                border: '1px solid #ddd',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label
+              htmlFor="password"
+              style={{ display: 'block', marginBottom: 8, fontSize: 14 }}
+            >
+              Password
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                style={{
+                  width: '100%',
+                  padding: '8px 40px 8px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #ddd',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <PasswordIcon />
+            </div>
+          </div>
+
+          {isRegister && (
+            <div style={{ marginBottom: 16 }}>
+              <label
+                htmlFor="confirmPassword"
+                style={{ display: 'block', marginBottom: 8, fontSize: 14 }}
+              >
+                Confirm Password
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="confirmPassword"
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  style={{
+                    width: '100%',
+                    padding: '8px 40px 8px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #ddd',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <PasswordIcon />
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div style={{ color: '#ff4d4f', fontSize: 14, marginBottom: 16 }}>
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="primaryBtn"
+            disabled={loading}
+            style={{ width: '100%', marginBottom: 12 }}
+          >
+            {loading ? 'Processing...' : isRegister ? 'Sign Up' : 'Sign In'}
+          </button>
+
+          <div style={{ textAlign: 'center', fontSize: 14 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setIsRegister(!isRegister);
+                setError(null);
+                setConfirmPassword('');
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#1890ff',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              {isRegister
+                ? 'Already have an account? Sign In'
+                : "Don't have an account? Sign Up"}
+            </button>
+          </div>
+        </form>
+
+        <div
+          style={{
+            margin: '24px 0',
+            textAlign: 'center',
+            position: 'relative',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: 0,
+              right: 0,
+              height: 1,
+              background: '#eee',
+              zIndex: 1,
+            }}
+          />
+          <span
+            style={{
+              position: 'relative',
+              background: '#fff',
+              padding: '0 12px',
+              fontSize: 14,
+              color: '#999',
+              zIndex: 2,
+            }}
+          >
+            OR
+          </span>
+        </div>
+
+        <div>
           <button className="githubButton" onClick={onGithubSignIn}>
             <span className="githubIcon" aria-hidden="true">
               <svg

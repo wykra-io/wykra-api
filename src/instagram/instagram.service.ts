@@ -121,6 +121,31 @@ export class InstagramService {
     return this.llmClient;
   }
 
+  private async sleepAbortable(
+    ms: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!signal) {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      return;
+    }
+    if (signal.aborted) {
+      throw new Error('Aborted');
+    }
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(t);
+        signal.removeEventListener('abort', onAbort);
+        reject(new Error('Aborted'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
   /**
    * Analyzes an Instagram profile by fetching data from a third-party API
    * and processing the results using LLM.
@@ -129,7 +154,10 @@ export class InstagramService {
    *
    * @returns {Promise<InstagramAnalysisData>} The processed analysis results.
    */
-  public async analyzeProfile(profile: string): Promise<InstagramAnalysisData> {
+  public async analyzeProfile(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<InstagramAnalysisData> {
     try {
       const normalizedProfile = normalizeInstagramUsername(profile);
       if (!normalizedProfile) {
@@ -142,8 +170,8 @@ export class InstagramService {
         `Starting analysis for Instagram profile: ${profile} (normalized=${normalizedProfile})`,
       );
 
-      const profileData = await this.fetchProfileData(normalizedProfile);
-      const analysis = await this.processWithLLM(profileData);
+      const profileData = await this.fetchProfileData(normalizedProfile, opts);
+      const analysis = await this.processWithLLM(profileData, opts);
 
       return {
         profile: normalizedProfile,
@@ -180,10 +208,14 @@ export class InstagramService {
       completedAt: null,
     });
 
-    await this.queueService.instagram.add('comments_suspicious', {
-      taskId,
-      profile: normalizedProfile,
-    });
+    await this.queueService.instagram.add(
+      'comments_suspicious',
+      {
+        taskId,
+        profile: normalizedProfile,
+      },
+      { jobId: taskId },
+    );
 
     this.metricsService.recordTaskCreated('instagram_comments_suspicious');
 
@@ -198,7 +230,10 @@ export class InstagramService {
    * - scrape comments (BrightData dataset id provided via config)
    * - run LLM suspicious-activity analysis
    */
-  public async analyzeSuspiciousComments(profile: string): Promise<unknown> {
+  public async analyzeSuspiciousComments(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<unknown> {
     try {
       const normalizedProfile = normalizeInstagramUsername(profile);
       if (!normalizedProfile) {
@@ -211,7 +246,7 @@ export class InstagramService {
         `Starting suspicious comments analysis for Instagram profile: ${profile} (normalized=${normalizedProfile})`,
       );
 
-      const profileData = await this.fetchProfileData(normalizedProfile);
+      const profileData = await this.fetchProfileData(normalizedProfile, opts);
       const p = profileData as unknown as Record<string, unknown>;
 
       // Extract post URLs from the profile (use the canonical interface field first, but be defensive)
@@ -269,6 +304,7 @@ export class InstagramService {
         requestBody,
         {
           params,
+          signal: opts?.signal,
         },
       );
 
@@ -308,6 +344,7 @@ export class InstagramService {
           suspiciousAnalysis = await this.analyzeCommentsForSuspiciousActivity(
             allComments,
             profile,
+            opts,
           );
         } catch (error) {
           this.logger.error(
@@ -341,6 +378,7 @@ export class InstagramService {
   private async analyzeCommentsForSuspiciousActivity(
     comments: unknown[],
     profile: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown> {
     try {
       const commentData = comments.slice(0, 150).map((comment, idx) => {
@@ -454,9 +492,10 @@ Risk Level Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureLLMClient().invoke([
-        new HumanMessage(prompt),
-      ]);
+      const response = await this.ensureLLMClient().invoke(
+        [new HumanMessage(prompt)],
+        { signal: opts?.signal },
+      );
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
@@ -518,6 +557,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
    */
   public async extractSearchContext(
     query: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<InstagramSearchContext> {
     if (!this.openrouterConfig.isConfigured) {
       throw new Error(
@@ -556,7 +596,9 @@ Return the result strictly as a JSON object with these fields.
 User query: '${query}'`;
 
       const llmStartTime = Date.now();
-      const response = await client.invoke([new HumanMessage(prompt)]);
+      const response = await client.invoke([new HumanMessage(prompt)], {
+        signal: opts?.signal,
+      });
       const llmDuration = (Date.now() - llmStartTime) / 1000;
       const responseText = response.content as string;
 
@@ -756,7 +798,10 @@ User query: '${query}'`;
    *
    * @returns {Promise<InstagramProfile>} The raw profile data from the API.
    */
-  private async fetchProfileData(profile: string): Promise<InstagramProfile> {
+  private async fetchProfileData(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<InstagramProfile> {
     const normalizedProfile = normalizeInstagramUsername(profile);
     if (!normalizedProfile) {
       throw new Error(
@@ -795,6 +840,7 @@ User query: '${query}'`;
           {
             params,
             timeout: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
+            signal: opts?.signal,
           },
         );
 
@@ -833,6 +879,7 @@ User query: '${query}'`;
                       timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
                       pollIntervalMs: 5000,
                       maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
+                      signal: opts?.signal,
                     },
                   );
                 const profileFromSnapshot =
@@ -879,6 +926,7 @@ User query: '${query}'`;
                     timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
                     pollIntervalMs: 5000,
                     maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
+                    signal: opts?.signal,
                   },
                 );
               const profileFromSnapshot =
@@ -924,6 +972,7 @@ User query: '${query}'`;
                 timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
                 pollIntervalMs: 5000,
                 maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
+                signal: opts?.signal,
               },
             );
           const profileFromSnapshot =
@@ -946,8 +995,9 @@ User query: '${query}'`;
         );
 
         if (attempt < InstagramService.PROFILE_SCRAPE_MAX_RETRIES) {
-          await new Promise((r) =>
-            setTimeout(r, InstagramService.PROFILE_SCRAPE_RETRY_DELAY_MS),
+          await this.sleepAbortable(
+            InstagramService.PROFILE_SCRAPE_RETRY_DELAY_MS,
+            opts?.signal,
           );
           continue;
         }
@@ -979,6 +1029,7 @@ User query: '${query}'`;
    */
   public async fetchProfilesForUrls(
     urls: string[],
+    opts?: { signal?: AbortSignal },
   ): Promise<InstagramProfile[]> {
     const results: InstagramProfile[] = [];
 
@@ -989,7 +1040,7 @@ User query: '${query}'`;
       }
 
       try {
-        const profile = await this.fetchProfileData(username);
+        const profile = await this.fetchProfileData(username, opts);
         results.push(profile);
       } catch (error) {
         this.logger.warn(
@@ -1013,7 +1064,10 @@ User query: '${query}'`;
    *
    * @returns {Promise<unknown[]>} Array of raw profile objects from BrightData.
    */
-  public async collectProfilesByUrls(urls: string[]): Promise<unknown[]> {
+  public async collectProfilesByUrls(
+    urls: string[],
+    opts?: { signal?: AbortSignal },
+  ): Promise<unknown[]> {
     if (!urls.length) {
       return [];
     }
@@ -1038,6 +1092,7 @@ User query: '${query}'`;
         timeoutMs: 20 * 60 * 1000,
         pollIntervalMs: 5000,
         maxRetries: 3,
+        signal: opts?.signal,
       },
     );
 
@@ -1066,6 +1121,7 @@ User query: '${query}'`;
   public async analyzeCollectedProfiles(
     taskId: string,
     profiles: unknown[],
+    opts?: { signal?: AbortSignal },
   ): Promise<InstagramProfileAnalysis[]> {
     if (!profiles.length) {
       return [];
@@ -1088,6 +1144,9 @@ User query: '${query}'`;
     const analyses: InstagramProfileAnalysis[] = [];
 
     for (const profile of profiles) {
+      if (opts?.signal?.aborted) {
+        throw new Error('Aborted');
+      }
       const p = profile as Record<string, unknown>;
       const profileUrl =
         (typeof p.profile_url === 'string' && p.profile_url) ||
@@ -1147,7 +1206,9 @@ Where:
 
       try {
         const llmStartTime = Date.now();
-        const response = await client.invoke([new HumanMessage(prompt)]);
+        const response = await client.invoke([new HumanMessage(prompt)], {
+          signal: opts?.signal,
+        });
         const llmDuration = (Date.now() - llmStartTime) / 1000;
         const responseText = response.content as string;
 
@@ -1320,6 +1381,7 @@ Where:
    */
   private async processWithLLM(
     profileData: InstagramProfile,
+    opts?: { signal?: AbortSignal },
   ): Promise<InstagramAnalysisResult> {
     try {
       this.logger.log('Processing profile data with OpenRouter LLM');
@@ -1432,9 +1494,10 @@ Quality Score Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureLLMClient().invoke([
-        new HumanMessage(prompt),
-      ]);
+      const response = await this.ensureLLMClient().invoke(
+        [new HumanMessage(prompt)],
+        { signal: opts?.signal },
+      );
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       // Record token usage metrics (always record the call)
@@ -1605,10 +1668,14 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
     });
 
     // Queue the search job for processing
-    await this.queueService.instagram.add('search', {
-      taskId,
-      query,
-    });
+    await this.queueService.instagram.add(
+      'search',
+      {
+        taskId,
+        query,
+      },
+      { jobId: taskId },
+    );
 
     // Record task creation metric
     this.metricsService.recordTaskCreated('instagram_search');
@@ -1638,10 +1705,14 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
       completedAt: null,
     });
 
-    await this.queueService.instagram.add('profile', {
-      taskId,
-      profile: normalizedProfile,
-    });
+    await this.queueService.instagram.add(
+      'profile',
+      {
+        taskId,
+        profile: normalizedProfile,
+      },
+      { jobId: taskId },
+    );
 
     this.metricsService.recordTaskCreated('instagram_profile');
 

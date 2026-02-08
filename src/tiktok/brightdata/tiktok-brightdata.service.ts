@@ -52,11 +52,37 @@ export class TikTokBrightdataService {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  private async sleepAbortable(
+    ms: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!signal) return await this.sleep(ms);
+    if (signal.aborted) {
+      throw new Error('Aborted');
+    }
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(t);
+        signal.removeEventListener('abort', onAbort);
+        reject(new Error('Aborted'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
   private async triggerDataset(
     datasetId: BrightdataDataset | string,
     triggerBody: unknown[],
     params: Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<{ snapshot_id: string }> {
+    if (signal?.aborted) {
+      throw new Error('Aborted');
+    }
     const response = await this.ensureHttpClient().post<{
       snapshot_id: string;
     }>('/datasets/v3/trigger', triggerBody, {
@@ -64,6 +90,7 @@ export class TikTokBrightdataService {
         dataset_id: datasetId,
         ...params,
       },
+      signal,
     });
 
     if (!response.data?.snapshot_id) {
@@ -76,14 +103,18 @@ export class TikTokBrightdataService {
   private async getSnapshotProgress(
     snapshotId: string,
     maxRetries: number,
+    signal?: AbortSignal,
   ): Promise<{ status?: string; error?: unknown }> {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        if (signal?.aborted) {
+          throw new Error('Aborted');
+        }
         const progress = await this.ensureHttpClient().get<{
           status?: string;
           error?: unknown;
-        }>(`/datasets/v3/progress/${snapshotId}`);
+        }>(`/datasets/v3/progress/${snapshotId}`, { signal });
         return progress.data ?? {};
       } catch (err) {
         lastErr = err;
@@ -92,7 +123,10 @@ export class TikTokBrightdataService {
           err instanceof Error ? err.message : String(err),
         );
         if (attempt < maxRetries) {
-          await this.sleep(TikTokBrightdataService.ASYNC_RETRY_DELAY_MS);
+          await this.sleepAbortable(
+            TikTokBrightdataService.ASYNC_RETRY_DELAY_MS,
+            signal,
+          );
         }
       }
     }
@@ -115,15 +149,22 @@ export class TikTokBrightdataService {
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeoutMs) {
+      if ((opts as { signal?: AbortSignal } | undefined)?.signal?.aborted) {
+        throw new Error('Aborted');
+      }
       let progressData: { status?: string; error?: unknown } | undefined;
       let lastErr: unknown;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
+          const signal = (opts as { signal?: AbortSignal } | undefined)?.signal;
+          if (signal?.aborted) {
+            throw new Error('Aborted');
+          }
           const progress = await this.ensureHttpClient().get<{
             status?: string;
             error?: unknown;
-          }>(`/datasets/v3/progress/${snapshotId}`);
+          }>(`/datasets/v3/progress/${snapshotId}`, { signal });
           progressData = progress.data ?? {};
           lastErr = undefined;
           break;
@@ -134,7 +175,10 @@ export class TikTokBrightdataService {
             err instanceof Error ? err.message : String(err),
           );
           if (attempt < maxRetries) {
-            await this.sleep(TikTokBrightdataService.ASYNC_RETRY_DELAY_MS);
+            await this.sleepAbortable(
+              TikTokBrightdataService.ASYNC_RETRY_DELAY_MS,
+              (opts as { signal?: AbortSignal } | undefined)?.signal,
+            );
           }
         }
       }
@@ -159,7 +203,10 @@ export class TikTokBrightdataService {
         );
       }
 
-      await this.sleep(pollIntervalMs);
+      await this.sleepAbortable(
+        pollIntervalMs,
+        (opts as { signal?: AbortSignal } | undefined)?.signal,
+      );
     }
 
     throw new Error(
@@ -170,7 +217,11 @@ export class TikTokBrightdataService {
   private async downloadSnapshot(
     snapshotId: string,
     format: 'json' | 'ndjson' = 'json',
+    signal?: AbortSignal,
   ): Promise<unknown> {
+    if (signal?.aborted) {
+      throw new Error('Aborted');
+    }
     const response = await this.ensureHttpClient().get(
       `/datasets/v3/snapshot/${snapshotId}`,
       {
@@ -180,6 +231,7 @@ export class TikTokBrightdataService {
         responseType: 'text',
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
+        signal,
       },
     );
 
@@ -213,21 +265,32 @@ export class TikTokBrightdataService {
     triggerBody: unknown[],
     params: Record<string, string>,
     metricName: string,
-    opts?: { timeoutMs?: number; pollIntervalMs?: number; maxRetries?: number },
+    opts?: {
+      timeoutMs?: number;
+      pollIntervalMs?: number;
+      maxRetries?: number;
+      signal?: AbortSignal;
+    },
   ): Promise<unknown[]> {
     const startTime = Date.now();
     try {
       const maxRetries =
         opts?.maxRetries ?? TikTokBrightdataService.ASYNC_MAX_RETRIES;
+      const signal = opts?.signal;
 
       let snapshot_id: string | null = null;
       let lastTriggerError: unknown;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const resp = await this.triggerDataset(datasetId, triggerBody, {
-            include_errors: 'true',
-            ...params,
-          });
+          const resp = await this.triggerDataset(
+            datasetId,
+            triggerBody,
+            {
+              include_errors: 'true',
+              ...params,
+            },
+            signal,
+          );
           snapshot_id = resp.snapshot_id;
           break;
         } catch (err) {
@@ -239,7 +302,10 @@ export class TikTokBrightdataService {
             err instanceof Error ? err.message : String(err),
           );
           if (attempt < maxRetries) {
-            await this.sleep(TikTokBrightdataService.ASYNC_RETRY_DELAY_MS);
+            await this.sleepAbortable(
+              TikTokBrightdataService.ASYNC_RETRY_DELAY_MS,
+              signal,
+            );
           }
         }
       }
@@ -261,8 +327,15 @@ export class TikTokBrightdataService {
 
       // Robust flow: keep checking progress and retry downloads until deadline.
       while (Date.now() < deadline) {
+        if (signal?.aborted) {
+          throw new Error('Aborted');
+        }
         // Poll progress (with retries) so we can surface status and stop on hard failures.
-        lastProgress = await this.getSnapshotProgress(snapshot_id, maxRetries);
+        lastProgress = await this.getSnapshotProgress(
+          snapshot_id,
+          maxRetries,
+          signal,
+        );
         const status = String(lastProgress.status ?? '').toLowerCase();
 
         if (status === 'failed' || status === 'error') {
@@ -280,6 +353,7 @@ export class TikTokBrightdataService {
               const downloaded = await this.downloadSnapshot(
                 snapshot_id,
                 'json',
+                signal,
               );
               lastDownloadError = null;
 
@@ -304,18 +378,25 @@ export class TikTokBrightdataService {
                 err instanceof Error ? err.message : String(err),
               );
               if (attempt < maxRetries) {
-                await this.sleep(TikTokBrightdataService.ASYNC_RETRY_DELAY_MS);
+                await this.sleepAbortable(
+                  TikTokBrightdataService.ASYNC_RETRY_DELAY_MS,
+                  signal,
+                );
               }
             }
           }
         }
 
-        await this.sleep(pollIntervalMs);
+        await this.sleepAbortable(pollIntervalMs, signal);
       }
 
       // Final attempt: sometimes progress polling can be flaky; try download one last time.
       try {
-        const downloaded = await this.downloadSnapshot(snapshot_id, 'json');
+        const downloaded = await this.downloadSnapshot(
+          snapshot_id,
+          'json',
+          signal,
+        );
         lastDownloadError = null;
 
         const duration = (Date.now() - startTime) / 1000;

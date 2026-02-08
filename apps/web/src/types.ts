@@ -2,6 +2,7 @@ export type MeResponse = {
   githubLogin: string;
   githubAvatarUrl: string | null;
   isAdmin: boolean;
+  email?: string | null;
 };
 
 export type ChatMessage = {

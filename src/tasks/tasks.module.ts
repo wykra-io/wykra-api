@@ -15,6 +15,7 @@ import {
 
 import { MetricsModule, MetricsService } from '../metrics';
 import { TasksController } from './tasks.controller';
+import { TaskCancellationService } from './task-cancellation.service';
 import { TasksProcessor } from './tasks.processor';
 import { TasksService } from './tasks.service';
 
@@ -31,6 +32,7 @@ import { TasksService } from './tasks.service';
   controllers: [TasksController],
   providers: [
     TasksService,
+    TaskCancellationService,
     TasksProcessor,
     TasksRepository,
     InstagramSearchProfilesRepository,
@@ -40,6 +42,6 @@ import { TasksService } from './tasks.service';
       useExisting: MetricsService,
     },
   ],
-  exports: [TasksService],
+  exports: [TasksService, TaskCancellationService],
 })
 export class TasksModule {}

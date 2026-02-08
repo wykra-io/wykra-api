@@ -12,6 +12,7 @@ import {
 
 import { BrightdataModule } from '../brightdata';
 import { MetricsModule, MetricsService } from '../metrics';
+import { TasksModule } from '../tasks';
 
 import { InstagramController } from './instagram.controller';
 import { InstagramProcessor } from './instagram.processor';
@@ -25,6 +26,7 @@ import { InstagramWebSearchService } from './instagram-web-search.service';
     CacheModule.register(),
     OpenrouterConfigModule,
     QueueModule,
+    TasksModule,
     TypeOrmModule.forFeature([Task, InstagramSearchProfile]),
     MetricsModule,
   ],

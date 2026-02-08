@@ -1,17 +1,20 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { createHash, createHmac, randomBytes } from 'crypto';
+import { createHash, createHmac, randomBytes, scrypt as scryptCallback } from 'crypto';
+import { promisify } from 'util';
+
+const scrypt = promisify(scryptCallback);
 import type { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { parse } from 'node:querystring';
-
 import {
   API_AUTH_CACHE_TTL_SECONDS,
   GITHUB_AUTH_CACHE_TTL_SECONDS,
@@ -20,9 +23,21 @@ import type { GithubAuthData } from './interfaces/github-auth-data.interface';
 import type { AuthTokenResponse } from './interfaces/auth-token-response.interface';
 import { User } from '@libs/entities/user.entity';
 import { GithubConfigService, TelegramConfigService } from '@libs/config';
+import { EmailAuthDto } from './dto';
 
 @Injectable()
 export class AuthService {
+  private async hashPassword(password: string): Promise<string> {
+    const salt = randomBytes(16).toString('hex');
+    const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
+    return `${salt}:${derivedKey.toString('hex')}`;
+  }
+
+  private async verifyPassword(password: string, hash: string): Promise<boolean> {
+    const [salt, key] = hash.split(':');
+    const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
+    return derivedKey.toString('hex') === key;
+  }
   constructor(
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
     @InjectRepository(User) private readonly usersRepo: Repository<User>,
@@ -109,6 +124,64 @@ export class AuthService {
   ): Promise<AuthTokenResponse> {
     const tg = this.telegramAuthFromInitData(initData);
     const user = await this.upsertTelegramUser(tg);
+    const token = await this.rotateApiToken(user);
+    return { token };
+  }
+
+  public async emailRegister(dto: EmailAuthDto): Promise<AuthTokenResponse> {
+    const existing = await this.usersRepo.findOne({
+      where: { email: dto.email.toLowerCase() },
+    });
+    if (existing) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    const passwordHash = await this.hashPassword(dto.password);
+    const user = this.usersRepo.create({
+      email: dto.email.toLowerCase(),
+      passwordHash,
+      githubId: null,
+      githubLogin: null,
+      githubAvatarUrl: null,
+      githubScopes: null,
+      telegramId: null,
+      telegramUsername: null,
+      telegramFirstName: null,
+      telegramLastName: null,
+      telegramPhotoUrl: null,
+      apiTokenHash: null,
+      apiTokenCreatedAt: null,
+    });
+
+    await this.usersRepo.save(user);
+    const token = await this.rotateApiToken(user);
+    return { token };
+  }
+
+  public async emailLogin(dto: EmailAuthDto): Promise<AuthTokenResponse> {
+    const user = await this.usersRepo.findOne({
+      where: { email: dto.email.toLowerCase() },
+      select: [
+        'id',
+        'email',
+        'passwordHash',
+        'apiTokenHash',
+        'apiTokenCreatedAt',
+      ],
+    });
+
+    if (!user || !user.passwordHash) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    const isPasswordValid = await this.verifyPassword(
+      dto.password,
+      user.passwordHash,
+    );
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
     const token = await this.rotateApiToken(user);
     return { token };
   }

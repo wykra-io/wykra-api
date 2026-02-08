@@ -138,6 +138,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [taskStopping, setTaskStopping] = useState(false);
 
   const [successRequestsBySessionId, setSuccessRequestsBySessionId] = useState<
     Record<number, ChatSuccessRequest[]>
@@ -311,6 +312,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
       setMessages([]);
       isInitialLoadRef.current = true;
       setActiveTaskId(null);
+      setTaskStopping(false);
       setChatInput('');
       setChatSending(false);
       return;
@@ -364,7 +366,11 @@ export function useChat({ enabled }: { enabled: boolean }) {
           .trim()
           .toLowerCase();
 
-        if (status === 'completed' || status === 'failed') {
+        if (
+          status === 'completed' ||
+          status === 'failed' ||
+          status === 'cancelled'
+        ) {
           for (let attempt = 0; attempt < 10; attempt++) {
             const history = await loadChatHistory();
             const stillProcessing =
@@ -395,6 +401,13 @@ export function useChat({ enabled }: { enabled: boolean }) {
                     ? task.result
                     : 'Task completed (no result).',
               };
+            } else if (status === 'cancelled') {
+              const isSearch =
+                next[realIdx].detectedEndpoint?.includes('/search') ?? false;
+              next[realIdx] = {
+                ...next[realIdx],
+                content: isSearch ? 'Search cancelled' : 'Analyze cancelled',
+              };
             } else {
               next[realIdx] = {
                 ...next[realIdx],
@@ -405,6 +418,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
           });
 
           setActiveTaskId(null);
+          setTaskStopping(false);
         }
       } catch (error) {
         console.warn(
@@ -442,6 +456,76 @@ export function useChat({ enabled }: { enabled: boolean }) {
     (e: ChangeEvent<HTMLInputElement>) => setChatInput(e.target.value),
     [],
   );
+
+  const stopActiveTask = useCallback(async () => {
+    const taskId = activeTaskIdRef.current;
+    if (!enabled || !taskId || taskStopping) return;
+
+    setTaskStopping(true);
+
+    const processingPrefix = 'Processing your request';
+    const isProcessingMessage = (content: string | undefined) =>
+      typeof content === 'string' && content.startsWith(processingPrefix);
+
+    // Optimistically reflect stopping in the UI.
+    setMessages((prev) => {
+      const idx = [...prev]
+        .reverse()
+        .findIndex(
+          (m) => m.role === 'assistant' && isProcessingMessage(m.content),
+        );
+      if (idx === -1) return prev;
+      const realIdx = prev.length - 1 - idx;
+      const next = [...prev];
+      next[realIdx] = { ...next[realIdx], content: 'Stopping...' };
+      return next;
+    });
+
+    try {
+      await apiPost(`/api/v1/tasks/${taskId}/stop`, {});
+      setMessages((prev) => {
+        const idx = [...prev]
+          .reverse()
+          .findIndex(
+            (m) => m.role === 'assistant' && isProcessingMessage(m.content),
+          );
+        if (idx === -1) return prev;
+        const realIdx = prev.length - 1 - idx;
+        const next = [...prev];
+        const isSearch =
+          next[realIdx].detectedEndpoint?.includes('/search') ?? false;
+        next[realIdx] = {
+          ...next[realIdx],
+          content: isSearch ? 'Search cancelled' : 'Analyze cancelled',
+        };
+        return next;
+      });
+    } catch (error) {
+      console.warn(
+        `Failed to stop task ${taskId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      setMessages((prev) => {
+        const idx = [...prev]
+          .reverse()
+          .findIndex(
+            (m) => m.role === 'assistant' && isProcessingMessage(m.content),
+          );
+        if (idx === -1) return prev;
+        const realIdx = prev.length - 1 - idx;
+        const next = [...prev];
+        next[realIdx] = {
+          ...next[realIdx],
+          content: 'Failed to stop task. Please try again.',
+        };
+        return next;
+      });
+    } finally {
+      setActiveTaskId(null);
+      setTaskStopping(false);
+    }
+  }, [enabled, taskStopping]);
 
   const onSubmit = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
@@ -658,10 +742,12 @@ export function useChat({ enabled }: { enabled: boolean }) {
     chatInput,
     chatSending,
     activeTaskId,
+    taskStopping,
     chatEndRef,
     chatInputRef,
     canSend,
     onChatInputChange,
     onSubmit,
+    stopActiveTask,
   };
 }

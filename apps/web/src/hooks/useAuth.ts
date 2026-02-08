@@ -39,7 +39,12 @@ function normalizeMeResponse(payload: unknown): MeResponse | null {
       ? (candidate as { isAdmin: boolean }).isAdmin
       : false;
 
-  return { githubLogin, githubAvatarUrl, isAdmin };
+  const email =
+    'email' in candidate && typeof (candidate as { email?: unknown }).email === 'string'
+      ? (candidate as { email: string }).email
+      : null;
+
+  return { githubLogin, githubAvatarUrl, isAdmin, email };
 }
 
 function extractToken(payload: unknown): string | null {
@@ -161,5 +166,21 @@ export function useAuth() {
     await refreshMe();
   }, [refreshMe]);
 
-  return { isAuthed, me, startGithubSignIn, telegramSignIn, logout };
+  const emailSignIn = useCallback(
+    async (email: string, password: string, isRegister: boolean) => {
+      const endpoint = isRegister ? '/api/v1/auth/register' : '/api/v1/auth/login';
+      const resp = await apiPost<unknown>(endpoint, { email, password });
+
+      const token = extractToken(resp);
+      if (!token) {
+        throw new Error('Email auth response did not include token');
+      }
+
+      setApiToken(token);
+      await refreshMe();
+    },
+    [refreshMe],
+  );
+
+  return { isAuthed, me, startGithubSignIn, telegramSignIn, emailSignIn, logout };
 }

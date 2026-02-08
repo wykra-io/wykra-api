@@ -89,6 +89,7 @@ export class TikTokLLMService {
 
   public async analyzeProfile(
     profileData: TikTokProfile,
+    opts?: { signal?: AbortSignal },
   ): Promise<TikTokAnalysisResult> {
     try {
       this.logger.log('Processing TikTok profile data with OpenRouter LLM');
@@ -268,9 +269,10 @@ Quality Score Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureDefaultClient().invoke([
-        new HumanMessage(prompt),
-      ]);
+      const response = await this.ensureDefaultClient().invoke(
+        [new HumanMessage(prompt)],
+        { signal: opts?.signal },
+      );
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
@@ -331,6 +333,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
 
   public async extractSearchContext(
     query: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<TikTokSearchContext> {
     try {
       const prompt = `Extract structured context from the user query about finding TikTok creators.
@@ -354,9 +357,10 @@ Return the result strictly as a JSON object with these fields (keys: category, r
 User query: '${query}'`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureSonnetClient().invoke([
-        new HumanMessage(prompt),
-      ]);
+      const response = await this.ensureSonnetClient().invoke(
+        [new HumanMessage(prompt)],
+        { signal: opts?.signal },
+      );
       const llmDuration = (Date.now() - llmStartTime) / 1000;
       const responseText = response.content as string;
 
@@ -432,6 +436,7 @@ User query: '${query}'`;
   public async analyzeCollectedProfileShort(
     profile: unknown,
     query: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ summary: string; score: number; relevance: number }> {
     const p = profile as Record<string, unknown>;
 
@@ -495,9 +500,10 @@ Return ONLY a JSON object with the following shape:
   "relevance": 0-100
 }`;
 
-    const response = await this.ensureSonnetClient().invoke([
-      new HumanMessage(prompt),
-    ]);
+    const response = await this.ensureSonnetClient().invoke(
+      [new HumanMessage(prompt)],
+      { signal: opts?.signal },
+    );
     const responseText = response.content as string;
 
     const parsed =
@@ -544,6 +550,7 @@ Return ONLY a JSON object with the following shape:
   public async analyzeCommentsForSuspiciousActivity(
     comments: unknown[],
     profile: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown> {
     try {
       const commentData = comments.slice(0, 150).map((comment, idx) => {
@@ -638,9 +645,10 @@ Risk Level Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureDefaultClient().invoke([
-        new HumanMessage(prompt),
-      ]);
+      const response = await this.ensureDefaultClient().invoke(
+        [new HumanMessage(prompt)],
+        { signal: opts?.signal },
+      );
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
