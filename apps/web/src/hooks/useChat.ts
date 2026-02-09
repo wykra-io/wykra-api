@@ -564,7 +564,10 @@ export function useChat({ enabled }: { enabled: boolean }) {
 
   const onSubmit = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       const query = chatInput.trim();
       if (!query || !canSend || !activeSessionId) return;
 

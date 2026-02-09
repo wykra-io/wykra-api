@@ -571,9 +571,12 @@ body {
   box-shadow: none !important;
   border: none !important;
   padding: 0 !important;
-  width: auto !important;
-  height: auto !important;
+  width: 40px !important;
+  height: 40px !important;
   background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .telegramHeader {
