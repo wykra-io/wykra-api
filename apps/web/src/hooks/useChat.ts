@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
+import WebApp from '@twa-dev/sdk';
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api';
 import type {
@@ -265,9 +266,11 @@ export function useChat({ enabled }: { enabled: boolean }) {
     async ({
       skipHistory = false,
       activeSessionIdOverride = null,
+      autoCreateIfEmpty = false,
     }: {
       skipHistory?: boolean;
       activeSessionIdOverride?: number | null;
+      autoCreateIfEmpty?: boolean;
     } = {}) => {
       if (!enabled) return;
       try {
@@ -277,6 +280,11 @@ export function useChat({ enabled }: { enabled: boolean }) {
         const list = Array.isArray(resp) ? resp : resp.data || [];
 
         if (pendingPlaceholderIdRef.current !== null) {
+          return;
+        }
+
+        if (autoCreateIfEmpty && list.length === 0) {
+          void createNewSession();
           return;
         }
 
@@ -351,7 +359,9 @@ export function useChat({ enabled }: { enabled: boolean }) {
     }
 
     // Initial load of sessions
-    void loadSessions();
+    // If we're in Telegram, we want to auto-create a session if none exist.
+    const isTelegram = !!WebApp.initData;
+    void loadSessions({ autoCreateIfEmpty: isTelegram });
   }, [enabled]);
 
   useEffect(() => {
