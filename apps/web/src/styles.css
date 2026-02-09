@@ -566,6 +566,20 @@ body {
   display: none;
 }
 
+.inlineToggle {
+  position: static !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  background: transparent !important;
+}
+
+.telegramHeader {
+  padding: 8px 0 !important;
+}
+
 @media (max-width: 540px) {
   .header {
     padding: 12px 18px;
@@ -612,6 +626,10 @@ body {
     color: #475569;
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  .isTelegram .sideMenuToggle {
+    display: none;
   }
 
   .sideMenuOpen .sideMenuToggle {
