@@ -562,6 +562,10 @@ body {
   filter: brightness(1.03);
 }
 
+.sideMenuToggle {
+  display: none;
+}
+
 @media (max-width: 540px) {
   .header {
     padding: 12px 18px;
@@ -578,6 +582,53 @@ body {
 
   .sideMenu {
     display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 100;
+    width: 280px;
+    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.15);
+    background: white;
+  }
+
+  .sideMenuOpen .sideMenu {
+    display: flex;
+  }
+
+  .sideMenuToggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 110;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    color: #475569;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  .sideMenuOpen .sideMenuToggle {
+    left: auto;
+    right: 12px;
+    background: white;
+    border-color: #e2e8f0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    color: #475569;
+  }
+
+  .sideMenuOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 90;
   }
 
   .footerCopyright {
