@@ -1,4 +1,11 @@
-import { Controller, Get, Req, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Body,
+  Req,
+  ForbiddenException,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull } from 'typeorm';
@@ -208,5 +215,37 @@ export class AdminController {
       createdAt: s.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: s.updatedAt?.toISOString() ?? new Date().toISOString(),
     }));
+  }
+
+  @Get('settings')
+  public async getSettings(
+    @Req() req: Request & { user?: User },
+  ): Promise<{ reasoningEffort: string | null }> {
+    const user = req.user;
+    if (!user || !user.isAdmin) {
+      throw new ForbiddenException('Admin access required');
+    }
+
+    return { reasoningEffort: user.reasoningEffort };
+  }
+
+  @Patch('settings')
+  public async updateSettings(
+    @Req() req: Request & { user?: User },
+    @Body() body: { reasoningEffort: string | null },
+  ): Promise<{ success: boolean }> {
+    const user = req.user;
+    if (!user || !user.isAdmin) {
+      throw new ForbiddenException('Admin access required');
+    }
+
+    // Only allow "none" or empty string
+    const effort =
+      body.reasoningEffort === 'none' || body.reasoningEffort === ''
+        ? body.reasoningEffort
+        : 'none';
+
+    await this.usersRepo.update(user.id, { reasoningEffort: effort });
+    return { success: true };
   }
 }

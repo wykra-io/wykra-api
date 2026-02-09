@@ -11,6 +11,8 @@ type Props = {
   chatInput: string;
   chatSending: boolean;
   activeTaskId: string | null;
+  taskStopping?: boolean;
+  onStopTask?: () => void;
   canSend: boolean;
   chatEndRef: RefObject<HTMLDivElement>;
   chatInputRef: RefObject<HTMLInputElement>;
@@ -25,6 +27,8 @@ export function ChatView({
   chatInput,
   chatSending,
   activeTaskId,
+  taskStopping,
+  onStopTask,
   canSend,
   chatEndRef,
   chatInputRef,
@@ -112,13 +116,50 @@ export function ChatView({
               className="chatInput"
             />
             <button
-              type="submit"
-              disabled={!chatInput.trim() || !canSend}
+              type={activeTaskId ? 'button' : 'submit'}
+              onClick={(e) => {
+                if (activeTaskId) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onStopTask?.();
+                }
+              }}
+              disabled={
+                activeTaskId
+                  ? !onStopTask || !!taskStopping
+                  : !chatInput.trim() || !canSend
+              }
               className={`chatSendButton ${
-                chatSending || !!activeTaskId ? 'chatSendButtonLoading' : ''
+                chatSending || !!taskStopping ? 'chatSendButtonLoading' : ''
               }`}
             >
-              {chatSending || !!activeTaskId ? (
+              {activeTaskId ? (
+                <span aria-label="Stop task">
+                  {taskStopping ? (
+                    'Stopping…'
+                  ) : (
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <rect
+                        x="5"
+                        y="5"
+                        width="14"
+                        height="14"
+                        rx="1"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </span>
+              ) : chatSending ? (
                 <span className="chatSendButtonDots" aria-hidden="true">
                   ...
                 </span>

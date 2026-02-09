@@ -8,6 +8,7 @@ import { TasksRepository } from '@libs/repositories';
 import { SentryClientService } from '@libs/sentry';
 
 import { MetricsService } from '../metrics';
+import { TaskCancellationService } from '../tasks/task-cancellation.service';
 import { TikTokService } from './tiktok.service';
 
 interface TikTokSearchJobData {
@@ -48,7 +49,13 @@ export class TikTokProcessor {
     private readonly sentry: SentryClientService,
     private readonly tiktokService: TikTokService,
     private readonly metricsService: MetricsService,
+    private readonly taskCancellation: TaskCancellationService,
   ) {}
+
+  private isCancelledError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error);
+    return /aborted|cancelled|canceled/i.test(msg);
+  }
 
   /**
    * Processes a TikTok search job.
@@ -57,6 +64,8 @@ export class TikTokProcessor {
   public async search(job: Job<TikTokSearchJobData>): Promise<void> {
     const { taskId, query } = job.data;
     const startTime = Date.now();
+    const controller = this.taskCancellation.register(taskId);
+    const signal = controller.signal;
 
     // Track queue wait time
     const queuedAt = job.timestamp;
@@ -68,6 +77,10 @@ export class TikTokProcessor {
     );
 
     try {
+      const existing = await this.tasksRepo.findOneByTaskId(taskId);
+      if (existing?.status === TaskStatus.Cancelled) {
+        return;
+      }
       if (TikTokProcessor.SEARCH_PROFILES_DISABLED) {
         await this.tasksRepo.update(taskId, {
           status: TaskStatus.Failed,
@@ -91,11 +104,9 @@ export class TikTokProcessor {
       );
       this.metricsService.recordTaskStatusChange('running', 'tiktok_search');
 
-      const context = await this.tiktokService.extractSearchContext(query);
-
-      if (!context.category) {
-        throw new Error('Category is required to perform TikTok search');
-      }
+      const context = await this.tiktokService.extractSearchContext(query, {
+        signal,
+      });
 
       const baseTerm = [context.category, context.location]
         .filter((v): v is string => typeof v === 'string' && v.length > 0)
@@ -107,6 +118,10 @@ export class TikTokProcessor {
           : baseTerm
             ? [baseTerm]
             : [];
+
+      if (searchTerms.length === 0) {
+        throw new Error('No search terms could be determined from the query');
+      }
 
       const country: string =
         typeof context.country_code === 'string' &&
@@ -142,6 +157,7 @@ export class TikTokProcessor {
         const batch = await this.tiktokService.discoverProfilesBySearchUrl(
           searchUrls,
           country,
+          { signal },
         );
         addProfilesToMap(batch);
       }
@@ -154,6 +170,7 @@ export class TikTokProcessor {
               taskId,
               discoveredProfiles,
               query,
+              { signal },
             )
           : [];
 
@@ -220,6 +237,17 @@ export class TikTokProcessor {
       const errorStack = error instanceof Error ? error.stack : undefined;
       const processingDuration = (Date.now() - startTime) / 1000;
 
+      if (this.isCancelledError(error)) {
+        this.logger.log(`TikTok search task ${taskId} was cancelled`);
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Cancelled,
+          error: 'Cancelled by user',
+          completedAt: new Date(),
+        });
+        this.metricsService.recordTaskStatusChange('failed', 'tiktok_search');
+        return;
+      }
+
       this.logger.error(
         `TikTok search task ${taskId} failed: ${errorMessage}`,
         errorStack,
@@ -260,6 +288,8 @@ export class TikTokProcessor {
       });
 
       this.metricsService.recordTaskFailed(processingDuration, 'tiktok_search');
+    } finally {
+      this.taskCancellation.cleanup(taskId);
     }
   }
 
@@ -270,6 +300,8 @@ export class TikTokProcessor {
   public async profile(job: Job<TikTokProfileJobData>): Promise<void> {
     const { taskId, profile } = job.data;
     const startTime = Date.now();
+    const controller = this.taskCancellation.register(taskId);
+    const signal = controller.signal;
 
     // Track queue wait time
     const queuedAt = job.timestamp;
@@ -281,6 +313,10 @@ export class TikTokProcessor {
     );
 
     try {
+      const existing = await this.tasksRepo.findOneByTaskId(taskId);
+      if (existing?.status === TaskStatus.Cancelled) {
+        return;
+      }
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,
         startedAt: new Date(),
@@ -292,7 +328,7 @@ export class TikTokProcessor {
       this.metricsService.recordTaskStatusChange('running', 'tiktok_profile');
 
       // This internally uses BrightData trigger -> poll -> snapshot download (runDatasetAndDownload)
-      const data = await this.tiktokService.analyzeProfile(profile);
+      const data = await this.tiktokService.analyzeProfile(profile, { signal });
 
       const result = JSON.stringify(data);
       const processingDuration = (Date.now() - startTime) / 1000;
@@ -314,6 +350,20 @@ export class TikTokProcessor {
       const errorStack = error instanceof Error ? error.stack : undefined;
       const processingDuration = (Date.now() - startTime) / 1000;
 
+      if (this.isCancelledError(error)) {
+        this.logger.log(`TikTok profile task ${taskId} was cancelled`);
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Cancelled,
+          error: 'Cancelled by user',
+          completedAt: new Date(),
+        });
+        this.metricsService.recordTaskFailed(
+          processingDuration,
+          'tiktok_profile',
+        );
+        return;
+      }
+
       this.logger.error(
         `TikTok profile task ${taskId} failed: ${errorMessage}`,
         errorStack,
@@ -331,6 +381,8 @@ export class TikTokProcessor {
         processingDuration,
         'tiktok_profile',
       );
+    } finally {
+      this.taskCancellation.cleanup(taskId);
     }
   }
 
@@ -343,6 +395,8 @@ export class TikTokProcessor {
   ): Promise<void> {
     const { taskId, profile } = job.data;
     const startTime = Date.now();
+    const controller = this.taskCancellation.register(taskId);
+    const signal = controller.signal;
 
     const queuedAt = job.timestamp;
     const waitTime = (startTime - queuedAt) / 1000;
@@ -353,6 +407,10 @@ export class TikTokProcessor {
     );
 
     try {
+      const existing = await this.tasksRepo.findOneByTaskId(taskId);
+      if (existing?.status === TaskStatus.Cancelled) {
+        return;
+      }
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,
         startedAt: new Date(),
@@ -366,7 +424,9 @@ export class TikTokProcessor {
         'tiktok_comments_suspicious',
       );
 
-      const data = await this.tiktokService.analyzeSuspiciousComments(profile);
+      const data = await this.tiktokService.analyzeSuspiciousComments(profile, {
+        signal,
+      });
       const result = JSON.stringify(data);
       const processingDuration = (Date.now() - startTime) / 1000;
 
@@ -389,6 +449,20 @@ export class TikTokProcessor {
       const errorStack = error instanceof Error ? error.stack : undefined;
       const processingDuration = (Date.now() - startTime) / 1000;
 
+      if (this.isCancelledError(error)) {
+        this.logger.log(`TikTok comments suspicious task ${taskId} was cancelled`);
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Cancelled,
+          error: 'Cancelled by user',
+          completedAt: new Date(),
+        });
+        this.metricsService.recordTaskFailed(
+          processingDuration,
+          'tiktok_comments_suspicious',
+        );
+        return;
+      }
+
       this.logger.error(
         `TikTok comments suspicious task ${taskId} failed: ${errorMessage}`,
         errorStack,
@@ -405,6 +479,8 @@ export class TikTokProcessor {
         processingDuration,
         'tiktok_comments_suspicious',
       );
+    } finally {
+      this.taskCancellation.cleanup(taskId);
     }
   }
 }

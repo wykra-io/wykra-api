@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 
 import {
@@ -14,6 +14,7 @@ import {
   TikTokSearchProfilesRepository,
 } from '@libs/repositories';
 import { MetricsService } from '../metrics';
+import { TaskCancellationService } from './task-cancellation.service';
 
 @Injectable()
 export class TasksService {
@@ -23,6 +24,7 @@ export class TasksService {
     private readonly instagramSearchProfilesRepo: InstagramSearchProfilesRepository,
     private readonly tiktokSearchProfilesRepo: TikTokSearchProfilesRepository,
     private readonly metricsService: MetricsService,
+    private readonly taskCancellation: TaskCancellationService,
   ) {}
 
   /**
@@ -46,15 +48,70 @@ export class TasksService {
     });
 
     // Queue the task for processing
-    await this.queueService.tasks.add('run-task', {
-      taskId,
-      data,
-    });
+    await this.queueService.tasks.add(
+      'run-task',
+      {
+        taskId,
+        data,
+      },
+      { jobId: taskId },
+    );
 
     // Record task creation metric
     this.metricsService.recordTaskCreated('generic');
 
     return taskId;
+  }
+
+  public async stopTask(taskId: string): Promise<Task> {
+    const task = await this.tasksRepo.findOneByTaskId(taskId);
+    console.log(`stopTask called for taskId: ${taskId}`, { status: task?.status });
+    if (!task) {
+      throw new HttpException('Task not found', HttpStatus.NOT_FOUND);
+    }
+
+    if (
+      task.status === TaskStatus.Completed ||
+      task.status === TaskStatus.Failed ||
+      task.status === TaskStatus.Cancelled
+    ) {
+      return task;
+    }
+
+    // Update status to Cancelled immediately to unblock polling and UI.
+    const completedAt = new Date();
+    await this.tasksRepo.update(taskId, {
+      status: TaskStatus.Cancelled,
+      error: 'Cancelled by user',
+      completedAt,
+    });
+
+    // Abort in-flight work in this process (BrightData/OpenRouter).
+    this.taskCancellation.abort(taskId, new Error('Task cancelled by user'));
+
+    // Remove pending jobs from queues (works when jobId === taskId).
+    await Promise.allSettled([
+      this.queueService.tasks
+        .getJob(taskId)
+        .then((job) => job?.remove())
+        .catch(() => undefined),
+      this.queueService.instagram
+        .getJob(taskId)
+        .then((job) => job?.remove())
+        .catch(() => undefined),
+      this.queueService.tiktok
+        .getJob(taskId)
+        .then((job) => job?.remove())
+        .catch(() => undefined),
+    ]);
+
+    // Best-effort: return updated task shape
+    return {
+      ...task,
+      status: TaskStatus.Cancelled,
+      error: 'Cancelled by user',
+      completedAt,
+    };
   }
 
   /**

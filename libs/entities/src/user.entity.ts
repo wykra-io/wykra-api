@@ -53,4 +53,19 @@ export class User extends Model {
 
   @Column({ name: 'is_admin', type: 'boolean', default: false })
   isAdmin!: boolean;
+
+  @Index('users_email_idx', { unique: true, where: 'email IS NOT NULL' })
+  @Column({ name: 'email', type: 'text', unique: true, nullable: true })
+  email!: string | null;
+
+  @Column({ name: 'password_hash', type: 'text', nullable: true, select: false })
+  passwordHash!: string | null;
+
+  @Column({
+    name: 'reasoning_effort',
+    type: 'text',
+    nullable: true,
+    default: 'none',
+  })
+  reasoningEffort!: string | null;
 }

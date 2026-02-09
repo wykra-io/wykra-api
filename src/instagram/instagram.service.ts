@@ -121,6 +121,31 @@ export class InstagramService {
     return this.llmClient;
   }
 
+  private async sleepAbortable(
+    ms: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!signal) {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      return;
+    }
+    if (signal.aborted) {
+      throw new Error('Aborted');
+    }
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(t);
+        signal.removeEventListener('abort', onAbort);
+        reject(new Error('Aborted'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
   /**
    * Analyzes an Instagram profile by fetching data from a third-party API
    * and processing the results using LLM.
@@ -129,7 +154,10 @@ export class InstagramService {
    *
    * @returns {Promise<InstagramAnalysisData>} The processed analysis results.
    */
-  public async analyzeProfile(profile: string): Promise<InstagramAnalysisData> {
+  public async analyzeProfile(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<InstagramAnalysisData> {
     try {
       const normalizedProfile = normalizeInstagramUsername(profile);
       if (!normalizedProfile) {
@@ -142,8 +170,8 @@ export class InstagramService {
         `Starting analysis for Instagram profile: ${profile} (normalized=${normalizedProfile})`,
       );
 
-      const profileData = await this.fetchProfileData(normalizedProfile);
-      const analysis = await this.processWithLLM(profileData);
+      const profileData = await this.fetchProfileData(normalizedProfile, opts);
+      const analysis = await this.processWithLLM(profileData, opts);
 
       return {
         profile: normalizedProfile,
@@ -180,10 +208,14 @@ export class InstagramService {
       completedAt: null,
     });
 
-    await this.queueService.instagram.add('comments_suspicious', {
-      taskId,
-      profile: normalizedProfile,
-    });
+    await this.queueService.instagram.add(
+      'comments_suspicious',
+      {
+        taskId,
+        profile: normalizedProfile,
+      },
+      { jobId: taskId },
+    );
 
     this.metricsService.recordTaskCreated('instagram_comments_suspicious');
 
@@ -198,7 +230,10 @@ export class InstagramService {
    * - scrape comments (BrightData dataset id provided via config)
    * - run LLM suspicious-activity analysis
    */
-  public async analyzeSuspiciousComments(profile: string): Promise<unknown> {
+  public async analyzeSuspiciousComments(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<unknown> {
     try {
       const normalizedProfile = normalizeInstagramUsername(profile);
       if (!normalizedProfile) {
@@ -211,7 +246,7 @@ export class InstagramService {
         `Starting suspicious comments analysis for Instagram profile: ${profile} (normalized=${normalizedProfile})`,
       );
 
-      const profileData = await this.fetchProfileData(normalizedProfile);
+      const profileData = await this.fetchProfileData(normalizedProfile, opts);
       const p = profileData as unknown as Record<string, unknown>;
 
       // Extract post URLs from the profile (use the canonical interface field first, but be defensive)
@@ -255,49 +290,25 @@ export class InstagramService {
       }
 
       const startTime = Date.now();
-      const endpoint = `/datasets/v3/scrape`;
-      const requestBody = postUrls.map((url) => ({ url }));
+      const triggerBody = postUrls.map((url) => ({ url }));
       const params = {
-        dataset_id: BrightdataDataset.INSTAGRAM_POST_COMMENTS,
-        notify: 'false',
-        include_errors: 'true',
         limit_per_input: '50',
       };
 
-      const response = await this.ensureHttpClient().post<unknown>(
-        endpoint,
-        requestBody,
+      const rawItems = await this.brightdataService.runDatasetTriggerAndDownload(
+        BrightdataDataset.INSTAGRAM_POST_COMMENTS,
+        triggerBody,
+        params,
+        'scrape_post_comments',
         {
-          params,
+          timeoutMs: 20 * 60 * 1000,
+          pollIntervalMs: 5000,
+          maxRetries: 3,
+          signal: opts?.signal,
         },
       );
 
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.recordBrightdataCall(
-        BrightdataDataset.INSTAGRAM_POST_COMMENTS,
-        'scrape_post_comments',
-        duration,
-      );
-
-      const data = response.data;
-      const allComments: unknown[] = Array.isArray(data)
-        ? (data as unknown[])
-        : data && typeof data === 'object'
-          ? [data]
-          : typeof data === 'string'
-            ? data
-                .split('\n')
-                .map((line) => line.trim())
-                .filter((line) => line.length > 0)
-                .map((line) => {
-                  try {
-                    return JSON.parse(line) as unknown;
-                  } catch {
-                    return null;
-                  }
-                })
-                .filter((x): x is unknown => x !== null)
-            : [];
+      const allComments = rawItems;
 
       let suspiciousAnalysis: unknown = null;
       if (allComments.length > 0) {
@@ -308,6 +319,7 @@ export class InstagramService {
           suspiciousAnalysis = await this.analyzeCommentsForSuspiciousActivity(
             allComments,
             profile,
+            opts,
           );
         } catch (error) {
           this.logger.error(
@@ -341,6 +353,7 @@ export class InstagramService {
   private async analyzeCommentsForSuspiciousActivity(
     comments: unknown[],
     profile: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown> {
     try {
       const commentData = comments.slice(0, 150).map((comment, idx) => {
@@ -454,9 +467,10 @@ Risk Level Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureLLMClient().invoke([
-        new HumanMessage(prompt),
-      ]);
+      const response = await this.ensureLLMClient().invoke(
+        [new HumanMessage(prompt)],
+        { signal: opts?.signal },
+      );
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       const model = this.openrouterConfig.model || 'unknown';
@@ -518,6 +532,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
    */
   public async extractSearchContext(
     query: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<InstagramSearchContext> {
     if (!this.openrouterConfig.isConfigured) {
       throw new Error(
@@ -543,7 +558,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
 
 From the query, identify and return the following fields (leave empty if not provided):
 
-category: the niche or topic the user wants (e.g., cooking, beauty, travel).
+category: the niche or topic the user wants (e.g., cooking, beauty, travel). If not explicitly mentioned, try to infer it from the query (e.g., "fashion in Poland" -> category: "fashion"). If it's still unclear but a location is provided, use "influencers" or "creators" as a fallback category.
 
 results_count: the number of influencers requested, if mentioned.
 
@@ -556,7 +571,9 @@ Return the result strictly as a JSON object with these fields.
 User query: '${query}'`;
 
       const llmStartTime = Date.now();
-      const response = await client.invoke([new HumanMessage(prompt)]);
+      const response = await client.invoke([new HumanMessage(prompt)], {
+        signal: opts?.signal,
+      });
       const llmDuration = (Date.now() - llmStartTime) / 1000;
       const responseText = response.content as string;
 
@@ -709,54 +726,18 @@ User query: '${query}'`;
   }
 
   /**
-   * Extracts snapshot_id from a Bright Data scrape response when it indicates "still in progress".
-   * Handles top-level object, array of items, or nested { data: [...] }.
-   */
-  private static getSnapshotIdIfInProgress(data: unknown): string | null {
-    const msg = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
-    const snapshotId = (obj: Record<string, unknown>) =>
-      typeof obj.snapshot_id === 'string' ? obj.snapshot_id : null;
-    const isInProgress = (obj: Record<string, unknown>) =>
-      msg(obj.message).includes(InstagramService.STILL_IN_PROGRESS_MESSAGE) ||
-      msg(obj.error).includes(InstagramService.STILL_IN_PROGRESS_MESSAGE);
-
-    const check = (obj: Record<string, unknown>) =>
-      isInProgress(obj) && snapshotId(obj) ? snapshotId(obj) : null;
-
-    if (data && typeof data === 'object') {
-      const obj = data as Record<string, unknown>;
-      const id = check(obj);
-      if (id) return id;
-      const nested = obj.data;
-      if (
-        Array.isArray(nested) &&
-        nested.length > 0 &&
-        nested[0] &&
-        typeof nested[0] === 'object'
-      )
-        return check(nested[0] as Record<string, unknown>) ?? null;
-    }
-    if (
-      Array.isArray(data) &&
-      data.length > 0 &&
-      data[0] &&
-      typeof data[0] === 'object'
-    )
-      return check(data[0] as Record<string, unknown>) ?? null;
-    return null;
-  }
-
-  /**
    * Fetches profile data from BrightData scraper API for Instagram.
    * Uses 15 min timeout and retries on status or request failure.
-   * When Bright Data returns "still in progress" with a snapshot_id, waits for the snapshot
-   * via Monitor Progress then downloads via Download Snapshot instead of failing.
+   * Uses async flow (trigger -> poll -> download) to ensure snapshot ID is captured for cancellation.
    *
    * @param {string} profile - The Instagram profile username.
    *
    * @returns {Promise<InstagramProfile>} The raw profile data from the API.
    */
-  private async fetchProfileData(profile: string): Promise<InstagramProfile> {
+  private async fetchProfileData(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<InstagramProfile> {
     const normalizedProfile = normalizeInstagramUsername(profile);
     if (!normalizedProfile) {
       throw new Error(
@@ -768,207 +749,41 @@ User query: '${query}'`;
       `Fetching Instagram profile data for: ${profile} (normalized=${normalizedProfile})`,
     );
 
-    const endpoint = `/datasets/v3/scrape`;
-    const datasetId = BrightdataDataset.INSTAGRAM;
-    const requestBody = {
-      input: [{ user_name: normalizedProfile }],
-    };
+    const triggerBody = [{ user_name: normalizedProfile }];
     const params = {
-      dataset_id: datasetId,
-      notify: 'false',
-      include_errors: 'true',
       type: 'discover_new',
       discover_by: 'user_name',
     };
 
-    let lastError: unknown;
-    for (
-      let attempt = 1;
-      attempt <= InstagramService.PROFILE_SCRAPE_MAX_RETRIES;
-      attempt++
-    ) {
-      const startTime = Date.now();
-      try {
-        const response = await this.ensureHttpClient().post<unknown>(
-          endpoint,
-          requestBody,
+    try {
+      const rawItems =
+        await this.brightdataService.runDatasetTriggerAndDownload(
+          BrightdataDataset.INSTAGRAM,
+          triggerBody,
+          params,
+          'fetch_profile_data',
           {
-            params,
-            timeout: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
+            timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
+            pollIntervalMs: 5000,
+            maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
+            signal: opts?.signal,
           },
         );
 
-        const duration = (Date.now() - startTime) / 1000;
-        this.metricsService.recordBrightdataCall(
-          BrightdataDataset.INSTAGRAM,
-          'fetch_profile_data',
-          duration,
-        );
+      const profileFromSnapshot =
+        this.normalizeDownloadedSnapshotToProfile(rawItems);
+      if (profileFromSnapshot) return profileFromSnapshot;
 
-        this.logger.log(
-          `Successfully fetched data for profile: ${profile} (normalized=${normalizedProfile})`,
-        );
-
-        if (Array.isArray(response.data) && response.data.length > 0) {
-          const item = response.data[0] as unknown;
-          if (item && typeof item === 'object') {
-            const obj = item as Record<string, unknown>;
-            const hasExpectedFields =
-              typeof obj.profile_url === 'string' ||
-              typeof obj.profile_name === 'string' ||
-              typeof obj.account === 'string';
-
-            if (!hasExpectedFields) {
-              const snapshotId = InstagramService.getSnapshotIdIfInProgress(
-                response.data,
-              );
-              if (snapshotId) {
-                this.logger.log(
-                  `Instagram profile ${profile}: scrape still in progress, waiting for snapshot ${snapshotId}`,
-                );
-                const downloaded =
-                  await this.brightdataService.waitAndDownloadSnapshot(
-                    snapshotId,
-                    {
-                      timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
-                      pollIntervalMs: 5000,
-                      maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
-                    },
-                  );
-                const profileFromSnapshot =
-                  this.normalizeDownloadedSnapshotToProfile(downloaded);
-                if (profileFromSnapshot) return profileFromSnapshot;
-                throw new Error(
-                  'Instagram snapshot ready but did not contain valid profile data.',
-                );
-              }
-              const err =
-                (typeof obj.error === 'string' && obj.error) ||
-                (typeof obj.message === 'string' && obj.message) ||
-                null;
-              throw new Error(
-                err
-                  ? `Instagram scraper error: ${err}`
-                  : 'Instagram scraper error: unexpected response from scraper',
-              );
-            }
-          }
-
-          return item as InstagramProfile;
-        }
-
-        if (response.data && typeof response.data === 'object') {
-          const obj = response.data as Record<string, unknown>;
-          const hasExpectedFields =
-            typeof obj.profile_url === 'string' ||
-            typeof obj.profile_name === 'string' ||
-            typeof obj.account === 'string';
-
-          if (!hasExpectedFields) {
-            const snapshotId = InstagramService.getSnapshotIdIfInProgress(
-              response.data,
-            );
-            if (snapshotId) {
-              this.logger.log(
-                `Instagram profile ${profile}: scrape still in progress, waiting for snapshot ${snapshotId}`,
-              );
-              const downloaded =
-                await this.brightdataService.waitAndDownloadSnapshot(
-                  snapshotId,
-                  {
-                    timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
-                    pollIntervalMs: 5000,
-                    maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
-                  },
-                );
-              const profileFromSnapshot =
-                this.normalizeDownloadedSnapshotToProfile(downloaded);
-              if (profileFromSnapshot) return profileFromSnapshot;
-              throw new Error(
-                'Instagram snapshot ready but did not contain valid profile data.',
-              );
-            }
-            const err =
-              (typeof obj.error === 'string' && obj.error) ||
-              (typeof obj.message === 'string' && obj.message) ||
-              null;
-            throw new Error(
-              err
-                ? `Instagram scraper error: ${err}`
-                : 'Instagram scraper error: unexpected response from scraper',
-            );
-          }
-
-          return response.data as InstagramProfile;
-        }
-
-        throw new Error(
-          'Unexpected response format from BrightData API. Expected array with profile data or single profile object.',
-        );
-      } catch (error) {
-        lastError = error;
-        const axiosError = error as AxiosError<unknown>;
-        const responseBody = axiosError.response?.data;
-        const snapshotIdFromError =
-          responseBody != null
-            ? InstagramService.getSnapshotIdIfInProgress(responseBody)
-            : null;
-        if (snapshotIdFromError) {
-          this.logger.log(
-            `Instagram profile ${profile}: scrape still in progress (from error response), waiting for snapshot ${snapshotIdFromError}`,
-          );
-          const downloaded =
-            await this.brightdataService.waitAndDownloadSnapshot(
-              snapshotIdFromError,
-              {
-                timeoutMs: InstagramService.PROFILE_SCRAPE_TIMEOUT_MS,
-                pollIntervalMs: 5000,
-                maxRetries: InstagramService.PROFILE_SCRAPE_MAX_RETRIES,
-              },
-            );
-          const profileFromSnapshot =
-            this.normalizeDownloadedSnapshotToProfile(downloaded);
-          if (profileFromSnapshot) return profileFromSnapshot;
-          throw new Error(
-            'Instagram snapshot ready but did not contain valid profile data.',
-          );
-        }
-
-        const msg =
-          axiosError.response != null
-            ? `${axiosError.response.status} - ${axiosError.response.statusText}`
-            : axiosError.request != null
-              ? 'No response from Instagram scraper API'
-              : (axiosError.message ?? String(error));
-
-        this.logger.warn(
-          `BrightData profile scrape attempt ${attempt}/${InstagramService.PROFILE_SCRAPE_MAX_RETRIES} for ${profile}: ${msg}`,
-        );
-
-        if (attempt < InstagramService.PROFILE_SCRAPE_MAX_RETRIES) {
-          await new Promise((r) =>
-            setTimeout(r, InstagramService.PROFILE_SCRAPE_RETRY_DELAY_MS),
-          );
-          continue;
-        }
-
-        if (axiosError.response) {
-          throw new Error(
-            `Failed to fetch Instagram profile: ${axiosError.response.statusText} (${axiosError.response.status})`,
-          );
-        }
-        if (axiosError.request) {
-          throw new Error('No response from Instagram scraper API');
-        }
-        throw new Error(
-          `Failed to fetch Instagram profile: ${axiosError.message ?? String(error)}`,
-        );
-      }
+      throw new Error(
+        'Instagram scrape completed but did not contain valid profile data.',
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error fetching Instagram profile data for ${profile}:`,
+        error,
+      );
+      throw error;
     }
-
-    throw lastError instanceof Error
-      ? lastError
-      : new Error('Instagram profile scrape failed after retries');
   }
 
   /**
@@ -979,6 +794,7 @@ User query: '${query}'`;
    */
   public async fetchProfilesForUrls(
     urls: string[],
+    opts?: { signal?: AbortSignal },
   ): Promise<InstagramProfile[]> {
     const results: InstagramProfile[] = [];
 
@@ -989,7 +805,7 @@ User query: '${query}'`;
       }
 
       try {
-        const profile = await this.fetchProfileData(username);
+        const profile = await this.fetchProfileData(username, opts);
         results.push(profile);
       } catch (error) {
         this.logger.warn(
@@ -1013,7 +829,10 @@ User query: '${query}'`;
    *
    * @returns {Promise<unknown[]>} Array of raw profile objects from BrightData.
    */
-  public async collectProfilesByUrls(urls: string[]): Promise<unknown[]> {
+  public async collectProfilesByUrls(
+    urls: string[],
+    opts?: { signal?: AbortSignal },
+  ): Promise<unknown[]> {
     if (!urls.length) {
       return [];
     }
@@ -1029,31 +848,49 @@ User query: '${query}'`;
       type: 'url_collection',
     };
 
-    const rawItems = await this.brightdataService.runDatasetTriggerAndDownload(
-      BrightdataDataset.INSTAGRAM,
-      triggerBody,
-      params,
-      'collect_profiles_by_urls',
-      {
-        timeoutMs: 20 * 60 * 1000,
-        pollIntervalMs: 5000,
-        maxRetries: 3,
-      },
-    );
+    try {
+      const rawItems = await this.brightdataService.runDatasetTriggerAndDownload(
+        BrightdataDataset.INSTAGRAM,
+        triggerBody,
+        params,
+        'collect_profiles_by_urls',
+        {
+          timeoutMs: 20 * 60 * 1000,
+          pollIntervalMs: 5000,
+          maxRetries: 3,
+          signal: opts?.signal,
+        },
+      );
 
-    // Skip error entries like {"error_code":"dead_page", ...}
-    const items = (rawItems as Record<string, unknown>[]).filter(
-      (obj) =>
-        obj &&
-        typeof obj === 'object' &&
-        !('error_code' in obj && obj.error_code),
-    );
+      // Skip error entries like {"error_code":"dead_page", ...}
+      const items = (rawItems as Record<string, unknown>[]).filter(
+        (obj) =>
+          obj &&
+          typeof obj === 'object' &&
+          !('error_code' in obj && obj.error_code),
+      );
 
-    this.logger.log(
-      `Collected ${items.length} Instagram profiles by URL (${urls.length} urls requested)`,
-    );
+      this.logger.log(
+        `Collected ${items.length} Instagram profiles by URL (${urls.length} urls requested)`,
+      );
 
-    return items;
+      return items;
+    } catch (error) {
+      if (
+        opts?.signal?.aborted &&
+        error instanceof Error &&
+        (error.message.includes('Aborted') ||
+          error.message.includes('cancelled') ||
+          error.message.includes('canceled'))
+      ) {
+        // If we have a snapshot ID from a previous attempt or state, we could stop it here.
+        // But runDatasetTriggerAndDownload already throws after the first trigger if aborted.
+        this.logger.log(
+          `Collection of Instagram profiles by URL aborted for ${urls.length} urls`,
+        );
+      }
+      throw error;
+    }
   }
 
   /**
@@ -1066,6 +903,7 @@ User query: '${query}'`;
   public async analyzeCollectedProfiles(
     taskId: string,
     profiles: unknown[],
+    opts?: { signal?: AbortSignal },
   ): Promise<InstagramProfileAnalysis[]> {
     if (!profiles.length) {
       return [];
@@ -1088,6 +926,9 @@ User query: '${query}'`;
     const analyses: InstagramProfileAnalysis[] = [];
 
     for (const profile of profiles) {
+      if (opts?.signal?.aborted) {
+        throw new Error('Aborted');
+      }
       const p = profile as Record<string, unknown>;
       const profileUrl =
         (typeof p.profile_url === 'string' && p.profile_url) ||
@@ -1147,7 +988,9 @@ Where:
 
       try {
         const llmStartTime = Date.now();
-        const response = await client.invoke([new HumanMessage(prompt)]);
+        const response = await client.invoke([new HumanMessage(prompt)], {
+          signal: opts?.signal,
+        });
         const llmDuration = (Date.now() - llmStartTime) / 1000;
         const responseText = response.content as string;
 
@@ -1320,6 +1163,7 @@ Where:
    */
   private async processWithLLM(
     profileData: InstagramProfile,
+    opts?: { signal?: AbortSignal },
   ): Promise<InstagramAnalysisResult> {
     try {
       this.logger.log('Processing profile data with OpenRouter LLM');
@@ -1432,9 +1276,10 @@ Quality Score Guidelines:
 Return ONLY the JSON object, no additional text or markdown formatting.`;
 
       const llmStartTime = Date.now();
-      const response = await this.ensureLLMClient().invoke([
-        new HumanMessage(prompt),
-      ]);
+      const response = await this.ensureLLMClient().invoke(
+        [new HumanMessage(prompt)],
+        { signal: opts?.signal },
+      );
       const llmDuration = (Date.now() - llmStartTime) / 1000;
 
       // Record token usage metrics (always record the call)
@@ -1591,7 +1436,7 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
    *
    * @returns {Promise<string>} The task ID.
    */
-  public async search(query: string): Promise<string> {
+  public async search(query: string, userId?: number): Promise<string> {
     const taskId = randomUUID();
 
     // Create task record in database
@@ -1605,10 +1450,15 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
     });
 
     // Queue the search job for processing
-    await this.queueService.instagram.add('search', {
-      taskId,
-      query,
-    });
+    await this.queueService.instagram.add(
+      'search',
+      {
+        taskId,
+        query,
+        userId,
+      },
+      { jobId: taskId },
+    );
 
     // Record task creation metric
     this.metricsService.recordTaskCreated('instagram_search');
@@ -1638,10 +1488,14 @@ Return ONLY the JSON object, no additional text or markdown formatting.`;
       completedAt: null,
     });
 
-    await this.queueService.instagram.add('profile', {
-      taskId,
-      profile: normalizedProfile,
-    });
+    await this.queueService.instagram.add(
+      'profile',
+      {
+        taskId,
+        profile: normalizedProfile,
+      },
+      { jobId: taskId },
+    );
 
     this.metricsService.recordTaskCreated('instagram_profile');
 

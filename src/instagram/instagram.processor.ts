@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 
 import { QueueName } from '@libs/queue';
-import { TaskStatus } from '@libs/entities';
+import { TaskStatus, User } from '@libs/entities';
 import {
   InstagramSearchProfilesRepository,
   TasksRepository,
@@ -13,10 +13,12 @@ import { SentryClientService } from '@libs/sentry';
 import { MetricsService } from '../metrics';
 import { InstagramService } from './instagram.service';
 import { InstagramWebSearchService } from './instagram-web-search.service';
+import { TaskCancellationService } from '../tasks/task-cancellation.service';
 
 interface InstagramSearchJobData {
   taskId: string;
   query: string;
+  userId?: number;
 }
 
 interface InstagramCommentsSuspiciousJobData {
@@ -40,7 +42,13 @@ export class InstagramProcessor {
     private readonly searchProfilesRepo: InstagramSearchProfilesRepository,
     private readonly metricsService: MetricsService,
     private readonly webSearchService: InstagramWebSearchService,
+    private readonly taskCancellation: TaskCancellationService,
   ) {}
+
+  private isCancelledError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error);
+    return /aborted|cancelled|canceled/i.test(msg);
+  }
 
   /**
    * Finds previously discovered Instagram profile URLs for similar search contexts.
@@ -113,8 +121,15 @@ export class InstagramProcessor {
    */
   @Process('search')
   public async search(job: Job<InstagramSearchJobData>): Promise<void> {
-    const { taskId, query } = job.data;
+    const { taskId, query, userId } = job.data;
     const startTime = Date.now();
+    const controller = this.taskCancellation.register(taskId);
+    const signal = controller.signal;
+
+    console.log(`InstagramProcessor.search started for taskId: ${taskId}`, {
+      query,
+      userId,
+    });
 
     // Track queue wait time
     const queuedAt = job.timestamp; // Time when job was added to queue
@@ -126,6 +141,22 @@ export class InstagramProcessor {
     );
 
     try {
+      const existing = await this.tasksRepo.findOneByTaskId(taskId);
+      if (existing?.status === TaskStatus.Cancelled) {
+        return;
+      }
+
+      // Get user settings for reasoning effort
+      let reasoningEffort: string | null = 'none';
+      if (userId) {
+        const user = await this.tasksRepo.manager
+          .getRepository(User)
+          .findOneBy({ id: userId });
+        if (user) {
+          reasoningEffort = user.isAdmin ? user.reasoningEffort : 'none';
+        }
+      }
+
       // Update task status to running
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,
@@ -138,11 +169,16 @@ export class InstagramProcessor {
       this.metricsService.recordTaskStatusChange('running', 'instagram_search');
 
       // First step: extract structured context from the user query
-      const context = await this.instagramService.extractSearchContext(query);
+      const context = await this.instagramService.extractSearchContext(query, {
+        signal,
+      });
 
-      // Category is required – fail fast if it's missing
+      // Category is required – use a default if it's missing to avoid failing
       if (!context.category) {
-        throw new Error('Category is required to perform Instagram search');
+        context.category = 'influencers';
+        this.logger.log(
+          `No category found in query "${query}", defaulting to "influencers"`,
+        );
       }
 
       // Determine which profiles to exclude based on similar past searches
@@ -186,6 +222,7 @@ Do not invent usernames.`;
       const stage1Response = await this.webSearchService.searchUrls(
         stage1Prompt,
         1,
+        { signal, reasoningEffort },
       );
 
       const urlRegex = /https?:\/\/[^\s]+/g;
@@ -204,6 +241,7 @@ Do not invent usernames.`;
         instagramUrlsStage1.length > 0
           ? await this.instagramService.collectProfilesByUrls(
               instagramUrlsStage1,
+              { signal },
             )
           : [];
 
@@ -211,8 +249,10 @@ Do not invent usernames.`;
         this.logger.warn(
           `BrightData collectProfilesByUrls returned no profiles for ${instagramUrlsStage1.length} urls, falling back to per-profile scrape`,
         );
-        stage1Profiles =
-          await this.instagramService.fetchProfilesForUrls(instagramUrlsStage1);
+        stage1Profiles = await this.instagramService.fetchProfilesForUrls(
+          instagramUrlsStage1,
+          { signal },
+        );
       }
 
       // Stage 2 is disabled - only use Stage 1 results
@@ -235,6 +275,7 @@ Do not invent usernames.`;
           ? await this.instagramService.analyzeCollectedProfiles(
               taskId,
               combinedProfiles,
+              { signal },
             )
           : [];
 
@@ -350,6 +391,20 @@ Do not invent usernames.`;
       const errorStack = error instanceof Error ? error.stack : undefined;
       const processingDuration = (Date.now() - startTime) / 1000;
 
+      if (this.isCancelledError(error)) {
+        this.logger.log(`Instagram search task ${taskId} was cancelled`);
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Cancelled,
+          error: 'Cancelled by user',
+          completedAt: new Date(),
+        });
+        this.metricsService.recordTaskFailed(
+          processingDuration,
+          'instagram_search',
+        );
+        return;
+      }
+
       this.logger.error(
         `Instagram search task ${taskId} failed: ${errorMessage}`,
         errorStack,
@@ -366,6 +421,8 @@ Do not invent usernames.`;
         processingDuration,
         'instagram_search',
       );
+    } finally {
+      this.taskCancellation.cleanup(taskId);
     }
   }
 
@@ -376,6 +433,8 @@ Do not invent usernames.`;
   public async profile(job: Job<InstagramProfileJobData>): Promise<void> {
     const { taskId, profile } = job.data;
     const startTime = Date.now();
+    const controller = this.taskCancellation.register(taskId);
+    const signal = controller.signal;
 
     // Track queue wait time
     const queuedAt = job.timestamp;
@@ -387,6 +446,10 @@ Do not invent usernames.`;
     );
 
     try {
+      const existing = await this.tasksRepo.findOneByTaskId(taskId);
+      if (existing?.status === TaskStatus.Cancelled) {
+        return;
+      }
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,
         startedAt: new Date(),
@@ -400,7 +463,9 @@ Do not invent usernames.`;
         'instagram_profile',
       );
 
-      const data = await this.instagramService.analyzeProfile(profile);
+      const data = await this.instagramService.analyzeProfile(profile, {
+        signal,
+      });
       const result = JSON.stringify(data);
       const processingDuration = (Date.now() - startTime) / 1000;
 
@@ -420,14 +485,27 @@ Do not invent usernames.`;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
+      const processingDuration = (Date.now() - startTime) / 1000;
+
+      if (this.isCancelledError(error)) {
+        this.logger.log(`Instagram profile task ${taskId} was cancelled`);
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Cancelled,
+          error: 'Cancelled by user',
+          completedAt: new Date(),
+        });
+        this.metricsService.recordTaskFailed(
+          processingDuration,
+          'instagram_profile',
+        );
+        return;
+      }
 
       this.logger.error(
         `Instagram profile task ${taskId} failed: ${errorMessage}`,
         error instanceof Error ? error.stack : undefined,
       );
       this.sentry.sendException(error, { taskId, profile });
-
-      const processingDuration = (Date.now() - startTime) / 1000;
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Failed,
         error: errorMessage,
@@ -439,6 +517,8 @@ Do not invent usernames.`;
         'instagram_profile',
       );
       this.metricsService.recordTaskStatusChange('failed', 'instagram_profile');
+    } finally {
+      this.taskCancellation.cleanup(taskId);
     }
   }
 
@@ -451,6 +531,8 @@ Do not invent usernames.`;
   ): Promise<void> {
     const { taskId, profile } = job.data;
     const startTime = Date.now();
+    const controller = this.taskCancellation.register(taskId);
+    const signal = controller.signal;
 
     const queuedAt = job.timestamp;
     const waitTime = (startTime - queuedAt) / 1000;
@@ -461,6 +543,10 @@ Do not invent usernames.`;
     );
 
     try {
+      const existing = await this.tasksRepo.findOneByTaskId(taskId);
+      if (existing?.status === TaskStatus.Cancelled) {
+        return;
+      }
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,
         startedAt: new Date(),
@@ -474,8 +560,10 @@ Do not invent usernames.`;
         'instagram_comments_suspicious',
       );
 
-      const data =
-        await this.instagramService.analyzeSuspiciousComments(profile);
+      const data = await this.instagramService.analyzeSuspiciousComments(
+        profile,
+        { signal },
+      );
       const result = JSON.stringify(data);
       const processingDuration = (Date.now() - startTime) / 1000;
 
@@ -498,6 +586,20 @@ Do not invent usernames.`;
       const errorStack = error instanceof Error ? error.stack : undefined;
       const processingDuration = (Date.now() - startTime) / 1000;
 
+      if (this.isCancelledError(error)) {
+        this.logger.log(`Instagram comments suspicious task ${taskId} was cancelled`);
+        await this.tasksRepo.update(taskId, {
+          status: TaskStatus.Cancelled,
+          error: 'Cancelled by user',
+          completedAt: new Date(),
+        });
+        this.metricsService.recordTaskFailed(
+          processingDuration,
+          'instagram_comments_suspicious',
+        );
+        return;
+      }
+
       this.logger.error(
         `Instagram comments suspicious task ${taskId} failed: ${errorMessage}`,
         errorStack,
@@ -514,6 +616,8 @@ Do not invent usernames.`;
         processingDuration,
         'instagram_comments_suspicious',
       );
+    } finally {
+      this.taskCancellation.cleanup(taskId);
     }
   }
 }

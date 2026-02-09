@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiGet } from '../api';
+import { apiGet, apiPatch } from '../api';
 
 type DashboardStats = {
   users: {
@@ -50,7 +50,7 @@ type ChatSession = {
   updatedAt: string;
 };
 
-type Tab = 'users' | 'tasks' | 'chats';
+type Tab = 'users' | 'tasks' | 'chats' | 'settings';
 
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('users');
@@ -61,6 +61,10 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Settings state
+  const [reasoningEffort, setReasoningEffort] = useState<string>('none');
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     const loadStats = async () => {
@@ -124,6 +128,11 @@ export function AdminDashboard() {
                 ? response.data
                 : [];
           setChats(Array.isArray(data) ? data : []);
+        } else if (activeTab === 'settings') {
+          const response = await apiGet<{ reasoningEffort: string }>(
+            '/api/v1/admin/settings',
+          );
+          setReasoningEffort(response.reasoningEffort || 'none');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -134,6 +143,18 @@ export function AdminDashboard() {
 
     void loadTabData();
   }, [activeTab]);
+
+  const handleSaveSettings = async () => {
+    try {
+      setSavingSettings(true);
+      await apiPatch('/api/v1/admin/settings', { reasoningEffort });
+      alert('Settings saved successfully');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -192,6 +213,13 @@ export function AdminDashboard() {
           onClick={() => setActiveTab('chats')}
         >
           Chats {stats && `(${stats.chats.totalSessions})`}
+        </button>
+        <button
+          type="button"
+          className={`adminTab ${activeTab === 'settings' ? 'adminTabActive' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          Settings
         </button>
       </div>
 
@@ -275,6 +303,8 @@ export function AdminDashboard() {
                               ? '#10b981'
                               : task.status === 'failed'
                                 ? '#ef4444'
+                                : task.status === 'cancelled'
+                                  ? '#f59e0b'
                                 : task.status === 'running'
                                   ? '#3b82f6'
                                   : '#64748b',
@@ -294,6 +324,68 @@ export function AdminDashboard() {
               )}
             </tbody>
           </table>
+        ) : activeTab === 'settings' ? (
+          <div style={{ padding: 24, maxWidth: 600 }}>
+            <h2 style={{ fontSize: 20, marginBottom: 24 }}>General Settings</h2>
+
+            <div style={{ marginBottom: 24 }}>
+              <label
+                style={{
+                  display: 'block',
+                  marginBottom: 8,
+                  fontWeight: 600,
+                  fontSize: 14,
+                }}
+              >
+                Instagram Search Reasoning Effort
+              </label>
+              <select
+                value={reasoningEffort}
+                onChange={(e) => setReasoningEffort(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: 'white',
+                  fontSize: 14,
+                }}
+              >
+                <option value="">Empty</option>
+                <option value="none">None (Fastest)</option>
+              </select>
+              <p
+                style={{
+                  marginTop: 8,
+                  fontSize: 12,
+                  color: '#64748b',
+                  lineHeight: 1.5,
+                }}
+              >
+                Controls the reasoning effort for Instagram web search. For
+                non-admin users, this is always set to "none".
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveSettings}
+              disabled={savingSettings}
+              style={{
+                backgroundColor: '#3b82f6',
+                color: 'white',
+                padding: '8px 24px',
+                borderRadius: 6,
+                fontWeight: 600,
+                fontSize: 14,
+                border: 'none',
+                cursor: savingSettings ? 'not-allowed' : 'pointer',
+                opacity: savingSettings ? 0.7 : 1,
+              }}
+            >
+              {savingSettings ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
         ) : (
           <table className="adminTable">
             <thead>

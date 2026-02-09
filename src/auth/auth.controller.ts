@@ -18,7 +18,7 @@ import { AuthService } from './auth.service';
 import type { AuthTokenResponse } from './interfaces/auth-token-response.interface';
 import { GITHUB_AUTH_CACHE_TTL_SECONDS } from './constants';
 import { User } from '@libs/entities/user.entity';
-import { SocialAuthDto } from './dto';
+import { EmailAuthDto, SocialAuthDto } from './dto';
 
 const GITHUB_APP_STATE_COOKIE = 'wykra_gh_state';
 const GITHUB_APP_RETURNTO_COOKIE = 'wykra_gh_returnTo';
@@ -70,6 +70,20 @@ export class AuthController {
     throw new UnauthorizedException('Unsupported provider');
   }
 
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('register')
+  public async register(@Body() dto: EmailAuthDto): Promise<AuthTokenResponse> {
+    return this.authService.emailRegister(dto);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('login')
+  public async login(@Body() dto: EmailAuthDto): Promise<AuthTokenResponse> {
+    return this.authService.emailLogin(dto);
+  }
+
   @SkipThrottle()
   @Get('me')
   public me(@Req() req: Request & { user?: User }): {
@@ -85,6 +99,7 @@ export class AuthController {
     const login =
       user.githubLogin ||
       user.telegramUsername ||
+      user.email ||
       [user.telegramFirstName, user.telegramLastName]
         .filter(Boolean)
         .join(' ') ||

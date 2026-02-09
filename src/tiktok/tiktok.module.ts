@@ -11,6 +11,7 @@ import {
 } from '@libs/repositories';
 
 import { MetricsModule, MetricsService } from '../metrics';
+import { TasksModule } from '../tasks';
 
 import { TikTokController } from './tiktok.controller';
 import { TikTokProcessor } from './tiktok.processor';
@@ -24,6 +25,7 @@ import { TikTokService } from './tiktok.service';
     CacheModule.register(),
     OpenrouterConfigModule,
     QueueModule,
+    TasksModule,
     TypeOrmModule.forFeature([Task, TikTokSearchProfile]),
     MetricsModule,
   ],

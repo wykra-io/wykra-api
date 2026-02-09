@@ -53,15 +53,18 @@ export class TikTokService {
    * Scrapes and analyzes a TikTok profile by fetching data from BrightData
    * and processing the results using LLM.
    */
-  public async analyzeProfile(profile: string): Promise<TikTokAnalysisData> {
+  public async analyzeProfile(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<TikTokAnalysisData> {
     try {
       const normalizedUrl = normalizeTikTokProfileUrl(profile);
       this.logger.log(
         `Starting analysis for TikTok profile: ${profile} (url=${normalizedUrl})`,
       );
 
-      const profileData = await this.fetchProfileData(profile);
-      const analysis = await this.llm.analyzeProfile(profileData);
+      const profileData = await this.fetchProfileData(profile, opts);
+      const analysis = await this.llm.analyzeProfile(profileData, opts);
 
       return {
         profile: profile.replace(/^@+/, '').trim(),
@@ -77,14 +80,18 @@ export class TikTokService {
 
   public async extractSearchContext(
     query: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<TikTokSearchContext> {
-    return this.llm.extractSearchContext(query);
+    return this.llm.extractSearchContext(query, opts);
   }
 
   /**
    * Fetches profile data from BrightData for a TikTok profile (username or URL).
    */
-  private async fetchProfileData(profile: string): Promise<TikTokProfile> {
+  private async fetchProfileData(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<TikTokProfile> {
     const url = normalizeTikTokProfileUrl(profile);
     this.logger.log(`Fetching TikTok profile data for: ${profile} (${url})`);
 
@@ -99,6 +106,7 @@ export class TikTokService {
       {
         timeoutMs: 15 * 60 * 1000,
         maxRetries: 3,
+        signal: opts?.signal,
       },
     );
 
@@ -114,7 +122,10 @@ export class TikTokService {
   /**
    * Collects TikTok profile data from BrightData by profile URLs.
    */
-  public async collectProfilesByUrls(urls: string[]): Promise<unknown[]> {
+  public async collectProfilesByUrls(
+    urls: string[],
+    opts?: { signal?: AbortSignal },
+  ): Promise<unknown[]> {
     if (!urls.length) {
       return [];
     }
@@ -133,6 +144,7 @@ export class TikTokService {
           type: 'url_collection',
         },
         'collect_profiles_by_urls',
+        { signal: opts?.signal },
       );
     } catch (error) {
       this.sentry.sendException(error, { urls });
@@ -147,6 +159,7 @@ export class TikTokService {
   public async discoverProfilesBySearchUrl(
     searchUrls: string | string[],
     country = 'US',
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown[]> {
     try {
       const urls = Array.isArray(searchUrls) ? searchUrls : [searchUrls];
@@ -165,6 +178,7 @@ export class TikTokService {
           limit_per_input: '10',
         },
         'discover_by_search_url',
+        { signal: opts?.signal },
       );
     } catch (error) {
       this.logger.error(
@@ -183,6 +197,7 @@ export class TikTokService {
     taskId: string,
     profiles: unknown[],
     query: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<TikTokProfileAnalysis[]> {
     if (!profiles.length) {
       return [];
@@ -191,6 +206,9 @@ export class TikTokService {
     const analyses: TikTokProfileAnalysis[] = [];
 
     for (const profile of profiles) {
+      if (opts?.signal?.aborted) {
+        throw new Error('Aborted');
+      }
       const p = profile as Record<string, unknown>;
 
       const profileUrl =
@@ -239,7 +257,7 @@ export class TikTokService {
 
       try {
         const { summary, score, relevance } =
-          await this.llm.analyzeCollectedProfileShort(profile, query);
+          await this.llm.analyzeCollectedProfileShort(profile, query, opts);
 
         // Skip profiles that are less than 70% relevant to the query
         if (relevance < 70) {
@@ -307,14 +325,17 @@ export class TikTokService {
   /**
    * Analyzes suspicious comments for a TikTok profile by scraping comments from their videos.
    */
-  public async analyzeSuspiciousComments(profile: string): Promise<unknown> {
+  public async analyzeSuspiciousComments(
+    profile: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<unknown> {
     try {
       this.logger.log(
         `Starting suspicious comments analysis for TikTok profile: ${profile}`,
       );
 
       // First, fetch the profile data to get video URLs
-      const profileData = await this.fetchProfileData(profile);
+      const profileData = await this.fetchProfileData(profile, opts);
       const p = profileData as Record<string, unknown>;
 
       // Extract video URLs from the profile (try multiple dataset shapes)
@@ -368,6 +389,7 @@ export class TikTokService {
           limit_per_input: '50',
         },
         'scrape_video_comments',
+        { signal: opts?.signal },
       );
 
       let suspiciousAnalysis: unknown = null;
@@ -380,6 +402,7 @@ export class TikTokService {
             await this.llm.analyzeCommentsForSuspiciousActivity(
               allComments,
               profile,
+              opts,
             );
         } catch (error) {
           this.logger.error(
@@ -439,6 +462,7 @@ export class TikTokService {
         query,
       },
       {
+        jobId: taskId,
         // BrightData snapshot runs can take a long time; ensure the job isn't killed early.
         timeout: 30 * 60 * 1000, // 30 minutes
         // Keep explicit attempts/backoff here so search retries even if queue defaults change.
@@ -475,10 +499,14 @@ export class TikTokService {
       completedAt: null,
     });
 
-    await this.queueService.tiktok.add('profile', {
-      taskId,
-      profile: profileForJob,
-    });
+    await this.queueService.tiktok.add(
+      'profile',
+      {
+        taskId,
+        profile: profileForJob,
+      },
+      { jobId: taskId },
+    );
 
     this.metricsService.recordTaskCreated('tiktok_profile');
 
@@ -500,10 +528,14 @@ export class TikTokService {
       completedAt: null,
     });
 
-    await this.queueService.tiktok.add('comments_suspicious', {
-      taskId,
-      profile,
-    });
+    await this.queueService.tiktok.add(
+      'comments_suspicious',
+      {
+        taskId,
+        profile,
+      },
+      { jobId: taskId },
+    );
 
     this.metricsService.recordTaskCreated('tiktok_comments_suspicious');
 

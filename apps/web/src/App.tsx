@@ -17,7 +17,7 @@ import {
 export function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
-  const { isAuthed, me, startGithubSignIn, telegramSignIn, logout } = useAuth();
+  const { isAuthed, me, startGithubSignIn, telegramSignIn, emailSignIn, logout } = useAuth();
   const chat = useChat({ enabled: isAuthed });
 
   const attemptedTelegramAutoLoginRef = useRef(false);
@@ -118,6 +118,8 @@ export function App() {
               chatInput={chat.chatInput}
               chatSending={chat.chatSending}
               activeTaskId={chat.activeTaskId}
+              taskStopping={chat.taskStopping}
+              onStopTask={() => void chat.stopActiveTask()}
               canSend={chat.canSend}
               chatEndRef={chat.chatEndRef}
               chatInputRef={chat.chatInputRef}
@@ -135,6 +137,7 @@ export function App() {
         onTelegramSignIn={
           isTelegramMiniApp() ? () => void telegramSignIn() : undefined
         }
+        onEmailSignIn={emailSignIn}
       />
     </div>
   );

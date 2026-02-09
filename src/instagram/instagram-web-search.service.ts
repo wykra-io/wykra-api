@@ -64,6 +64,7 @@ export class InstagramWebSearchService {
   public async searchUrls(
     prompt: string,
     maxResults: number = 5,
+    opts?: { signal?: AbortSignal; reasoningEffort?: string | null },
   ): Promise<InstagramWebSearchResponse> {
     this.ensureConfigured();
 
@@ -71,6 +72,11 @@ export class InstagramWebSearchService {
     const startedAt = Date.now();
 
     try {
+      const reasoning: Record<string, string> = {};
+      if (opts?.reasoningEffort && opts.reasoningEffort !== 'none') {
+        reasoning.effort = opts.reasoningEffort;
+      }
+
       const res = await this.http.post<{
         choices?: Array<{ message?: { content?: string } }>;
         model?: string;
@@ -79,24 +85,26 @@ export class InstagramWebSearchService {
           completion_tokens?: number;
           total_tokens?: number;
         };
-      }>('/chat/completions', {
-        model: InstagramWebSearchService.MODEL,
-        plugins: [
-          { id: 'web', max_results: 3 }, // Always use 1 page to limit input tokens
-        ],
-        reasoning: {
-          effort: 'none',
+      }>(
+        '/chat/completions',
+        {
+          model: InstagramWebSearchService.MODEL,
+          plugins: [
+            { id: 'web', max_results: 3 }, // Always use 1 page to limit input tokens
+          ],
+          ...(Object.keys(reasoning).length > 0 ? { reasoning } : {}),
+          temperature: 0,
+          max_tokens: 10000, // Limit output tokens to 10,000
+          messages: [
+            {
+              role: 'system',
+              content: `You are performing open-web search to locate Instagram profile URLs. Return ONLY URLs, one per line, with no explanations or extra text.\nRequest nonce: ${nonce}\nDo not mention the nonce.`,
+            },
+            { role: 'user', content: prompt },
+          ],
         },
-        temperature: 0,
-        max_tokens: 10000, // Limit output tokens to 10,000
-        messages: [
-          {
-            role: 'system',
-            content: `You are performing open-web search to locate Instagram profile URLs. Return ONLY URLs, one per line, with no explanations or extra text.\nRequest nonce: ${nonce}\nDo not mention the nonce.`,
-          },
-          { role: 'user', content: prompt },
-        ],
-      });
+        { signal: opts?.signal },
+      );
 
       const duration = (Date.now() - startedAt) / 1000;
       const model =
