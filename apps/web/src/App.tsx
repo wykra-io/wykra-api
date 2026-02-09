@@ -18,9 +18,59 @@ export function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [sideMenuOpen, setSideMenuOpen] = useState(false);
-  const { isAuthed, me, startGithubSignIn, telegramSignIn, emailSignIn, logout } = useAuth();
+  const {
+    isAuthed,
+    me,
+    startGithubSignIn,
+    telegramSignIn,
+    googleSignIn,
+    emailSignIn,
+    logout,
+  } = useAuth();
   const chat = useChat({ enabled: isAuthed });
   const attemptedTelegramAutoLoginRef = useRef(false);
+
+  const handleGoogleSignIn = () => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      alert('Google Client ID not configured');
+      return;
+    }
+
+    const callback = (response: { access_token?: string }) => {
+      if (response.access_token) {
+        void googleSignIn(response.access_token).then(() => {
+          setAuthModalOpen(false);
+        });
+      }
+    };
+
+    const client = (
+      window as unknown as {
+        google: {
+          accounts: {
+            oauth2: {
+              initTokenClient: (config: {
+                client_id: string;
+                scope: string;
+                callback: (resp: { access_token?: string }) => void;
+              }) => { requestAccessToken: () => void };
+            };
+          };
+        };
+      }
+    ).google?.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'openid email profile',
+      callback,
+    });
+
+    if (client) {
+      client.requestAccessToken();
+    } else {
+      alert('Google Identity Services not loaded');
+    }
+  };
 
   useEffect(() => {
     if (attemptedTelegramAutoLoginRef.current) return;
@@ -241,6 +291,7 @@ export function App() {
         open={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         onGithubSignIn={startGithubSignIn}
+        onGoogleSignIn={handleGoogleSignIn}
         onTelegramSignIn={
           isTelegramMiniApp() ? () => void telegramSignIn() : undefined
         }

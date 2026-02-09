@@ -6,6 +6,6 @@ export class SocialAuthDto {
   code!: string;
 
   @IsString()
-  @IsIn(['telegram'])
-  provider!: 'telegram';
+  @IsIn(['telegram', 'google'])
+  provider!: 'telegram' | 'google';
 }
