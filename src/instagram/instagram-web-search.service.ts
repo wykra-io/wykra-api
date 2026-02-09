@@ -64,7 +64,7 @@ export class InstagramWebSearchService {
   public async searchUrls(
     prompt: string,
     maxResults: number = 5,
-    opts?: { signal?: AbortSignal },
+    opts?: { signal?: AbortSignal; reasoningEffort?: string | null },
   ): Promise<InstagramWebSearchResponse> {
     this.ensureConfigured();
 
@@ -72,6 +72,11 @@ export class InstagramWebSearchService {
     const startedAt = Date.now();
 
     try {
+      const reasoning: Record<string, string> = {};
+      if (opts?.reasoningEffort && opts.reasoningEffort !== 'none') {
+        reasoning.effort = opts.reasoningEffort;
+      }
+
       const res = await this.http.post<{
         choices?: Array<{ message?: { content?: string } }>;
         model?: string;
@@ -87,9 +92,7 @@ export class InstagramWebSearchService {
           plugins: [
             { id: 'web', max_results: 3 }, // Always use 1 page to limit input tokens
           ],
-          reasoning: {
-            effort: 'none',
-          },
+          ...(Object.keys(reasoning).length > 0 ? { reasoning } : {}),
           temperature: 0,
           max_tokens: 10000, // Limit output tokens to 10,000
           messages: [

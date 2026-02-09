@@ -24,6 +24,10 @@ export class TasksRepository {
     private readonly metrics?: IMetricsService,
   ) {}
 
+  public get manager() {
+    return this.repository.manager;
+  }
+
   public async create(task: Partial<Task>): Promise<Task> {
     const startTime = Date.now();
     try {

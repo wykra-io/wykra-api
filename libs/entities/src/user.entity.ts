@@ -58,11 +58,14 @@ export class User extends Model {
   @Column({ name: 'email', type: 'text', unique: true, nullable: true })
   email!: string | null;
 
+  @Column({ name: 'password_hash', type: 'text', nullable: true, select: false })
+  passwordHash!: string | null;
+
   @Column({
-    name: 'password_hash',
+    name: 'reasoning_effort',
     type: 'text',
     nullable: true,
-    select: false,
+    default: 'none',
   })
-  passwordHash!: string | null;
+  reasoningEffort!: string | null;
 }

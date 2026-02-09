@@ -117,7 +117,13 @@ export function ChatView({
             />
             <button
               type={activeTaskId ? 'button' : 'submit'}
-              onClick={activeTaskId ? onStopTask : undefined}
+              onClick={(e) => {
+                if (activeTaskId) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onStopTask?.();
+                }
+              }}
               disabled={
                 activeTaskId
                   ? !onStopTask || !!taskStopping

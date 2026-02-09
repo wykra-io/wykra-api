@@ -63,6 +63,8 @@ export class TikTokController {
     }
 
     const userId = req.user?.id;
+    // Rate limit check disabled for manual search
+    /*
     if (userId != null) {
       const key = `ratelimit:tiktok_search:${userId}`;
       const existing = await this.cache.get(key);
@@ -72,9 +74,11 @@ export class TikTokController {
         );
       }
     }
+    */
 
     const taskId = await this.tiktokService.search(dto.query);
 
+    /*
     if (userId != null) {
       await this.cache.set(
         `ratelimit:tiktok_search:${userId}`,
@@ -82,6 +86,7 @@ export class TikTokController {
         SEARCH_RATE_LIMIT_TTL_SECONDS,
       );
     }
+    */
 
     return { taskId };
   }

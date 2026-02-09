@@ -65,6 +65,7 @@ export class TasksService {
 
   public async stopTask(taskId: string): Promise<Task> {
     const task = await this.tasksRepo.findOneByTaskId(taskId);
+    console.log(`stopTask called for taskId: ${taskId}`, { status: task?.status });
     if (!task) {
       throw new HttpException('Task not found', HttpStatus.NOT_FOUND);
     }
@@ -76,6 +77,14 @@ export class TasksService {
     ) {
       return task;
     }
+
+    // Update status to Cancelled immediately to unblock polling and UI.
+    const completedAt = new Date();
+    await this.tasksRepo.update(taskId, {
+      status: TaskStatus.Cancelled,
+      error: 'Cancelled by user',
+      completedAt,
+    });
 
     // Abort in-flight work in this process (BrightData/OpenRouter).
     this.taskCancellation.abort(taskId, new Error('Task cancelled by user'));
@@ -95,13 +104,6 @@ export class TasksService {
         .then((job) => job?.remove())
         .catch(() => undefined),
     ]);
-
-    const completedAt = new Date();
-    await this.tasksRepo.update(taskId, {
-      status: TaskStatus.Cancelled,
-      error: 'Cancelled by user',
-      completedAt,
-    });
 
     // Best-effort: return updated task shape
     return {

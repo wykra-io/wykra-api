@@ -50,18 +50,9 @@ export class InstagramController {
     }
 
     const userId = req.user?.id;
-    if (userId != null) {
-      const key = `ratelimit:instagram_search:${userId}`;
-      const existing = await this.cache.get(key);
-      if (existing !== undefined && existing !== null) {
-        throw new ThrottlerException(
-          'Instagram search is limited to 1 per hour. Please try again later.',
-        );
-      }
-    }
+    const taskId = await this.instagramService.search(dto.query, userId);
 
-    const taskId = await this.instagramService.search(dto.query);
-
+    /*
     if (userId != null) {
       await this.cache.set(
         `ratelimit:instagram_search:${userId}`,
@@ -69,6 +60,7 @@ export class InstagramController {
         SEARCH_RATE_LIMIT_TTL_SECONDS,
       );
     }
+    */
 
     return { taskId };
   }

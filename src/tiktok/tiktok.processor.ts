@@ -108,10 +108,6 @@ export class TikTokProcessor {
         signal,
       });
 
-      if (!context.category) {
-        throw new Error('Category is required to perform TikTok search');
-      }
-
       const baseTerm = [context.category, context.location]
         .filter((v): v is string => typeof v === 'string' && v.length > 0)
         .join(' ');
@@ -122,6 +118,10 @@ export class TikTokProcessor {
           : baseTerm
             ? [baseTerm]
             : [];
+
+      if (searchTerms.length === 0) {
+        throw new Error('No search terms could be determined from the query');
+      }
 
       const country: string =
         typeof context.country_code === 'string' &&
@@ -238,6 +238,7 @@ export class TikTokProcessor {
       const processingDuration = (Date.now() - startTime) / 1000;
 
       if (this.isCancelledError(error)) {
+        this.logger.log(`TikTok search task ${taskId} was cancelled`);
         await this.tasksRepo.update(taskId, {
           status: TaskStatus.Cancelled,
           error: 'Cancelled by user',
@@ -350,6 +351,7 @@ export class TikTokProcessor {
       const processingDuration = (Date.now() - startTime) / 1000;
 
       if (this.isCancelledError(error)) {
+        this.logger.log(`TikTok profile task ${taskId} was cancelled`);
         await this.tasksRepo.update(taskId, {
           status: TaskStatus.Cancelled,
           error: 'Cancelled by user',
@@ -448,6 +450,7 @@ export class TikTokProcessor {
       const processingDuration = (Date.now() - startTime) / 1000;
 
       if (this.isCancelledError(error)) {
+        this.logger.log(`TikTok comments suspicious task ${taskId} was cancelled`);
         await this.tasksRepo.update(taskId, {
           status: TaskStatus.Cancelled,
           error: 'Cancelled by user',

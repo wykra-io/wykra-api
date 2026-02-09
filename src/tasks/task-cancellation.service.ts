@@ -26,6 +26,7 @@ export class TaskCancellationService {
 
   public abort(taskId: string, reason?: unknown): void {
     const controller = this.controllers.get(taskId);
+    console.log(`TaskCancellationService.abort called for taskId: ${taskId}`, { hasController: !!controller, reason });
     if (!controller) return;
     try {
       // Node 18+ supports abort(reason)
@@ -40,4 +41,3 @@ export class TaskCancellationService {
     this.controllers.delete(taskId);
   }
 }
-

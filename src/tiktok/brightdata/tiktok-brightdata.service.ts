@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
 import { BrightdataConfigService, BrightdataDataset } from '@libs/config';
 import { SentryClientService } from '@libs/sentry';
@@ -273,12 +273,13 @@ export class TikTokBrightdataService {
     },
   ): Promise<unknown[]> {
     const startTime = Date.now();
+    let snapshot_id: string | null = null;
+    const signal = opts?.signal;
+
     try {
       const maxRetries =
         opts?.maxRetries ?? TikTokBrightdataService.ASYNC_MAX_RETRIES;
-      const signal = opts?.signal;
 
-      let snapshot_id: string | null = null;
       let lastTriggerError: unknown;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -323,7 +324,6 @@ export class TikTokBrightdataService {
 
       const deadline = Date.now() + timeoutMs;
       let lastProgress: { status?: string; error?: unknown } | null = null;
-      let lastDownloadError: unknown = null;
 
       // Robust flow: keep checking progress and retry downloads until deadline.
       while (Date.now() < deadline) {
@@ -355,7 +355,6 @@ export class TikTokBrightdataService {
                 'json',
                 signal,
               );
-              lastDownloadError = null;
 
               const duration = (Date.now() - startTime) / 1000;
               this.metricsService.recordBrightdataCall(
@@ -372,7 +371,6 @@ export class TikTokBrightdataService {
               }
               return [];
             } catch (err) {
-              lastDownloadError = err;
               this.logger.warn(
                 `BrightData download attempt ${attempt}/${maxRetries} failed for snapshot ${snapshot_id}`,
                 err instanceof Error ? err.message : String(err),
@@ -397,7 +395,6 @@ export class TikTokBrightdataService {
           'json',
           signal,
         );
-        lastDownloadError = null;
 
         const duration = (Date.now() - startTime) / 1000;
         this.metricsService.recordBrightdataCall(
@@ -410,19 +407,15 @@ export class TikTokBrightdataService {
         if (downloaded && typeof downloaded === 'object')
           return [downloaded] as unknown[];
         return [];
-      } catch (err) {
-        lastDownloadError = err;
+      } catch {
+        // ignore final error
       }
 
       const lastStatus = lastProgress
         ? String(lastProgress.status ?? 'unknown')
         : 'unknown';
       throw new Error(
-        `Timed out waiting for BrightData snapshot ${snapshot_id} (${timeoutMs}ms). Last status=${lastStatus}. Last download error=${String(
-          lastDownloadError instanceof Error
-            ? lastDownloadError.message
-            : lastDownloadError,
-        )}`,
+        `Timed out waiting for BrightData snapshot ${snapshot_id} (${timeoutMs}ms). Last status=${lastStatus}.`,
       );
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
@@ -432,17 +425,59 @@ export class TikTokBrightdataService {
         duration,
         'error',
       );
-      this.logger.error(
-        `BrightData runDatasetAndDownload failed (dataset=${String(
-          datasetId,
-        )}, metric=${metricName})`,
-        error,
-      );
+
+      const isAborted =
+        error instanceof Error &&
+        (error.message.includes('Aborted') ||
+          error.message.includes('cancelled') ||
+          error.message.includes('canceled'));
+
+      if (isAborted) {
+        if (snapshot_id) {
+          await this.stopDatasetSnapshot(snapshot_id);
+        }
+        this.logger.log(
+          `BrightData runDatasetAndDownload aborted (dataset=${String(
+            datasetId,
+          )}, metric=${metricName})`,
+        );
+      } else {
+        this.logger.error(
+          `BrightData runDatasetAndDownload failed (dataset=${String(
+            datasetId,
+          )}, metric=${metricName})`,
+          error,
+        );
+      }
+
       this.sentry.sendException(error, {
         datasetId: String(datasetId),
         metricName,
+        isAborted,
       });
       throw error;
+    }
+  }
+
+  public async stopDatasetSnapshot(snapshotId: string): Promise<void> {
+    try {
+      this.logger.log(`Stopping BrightData snapshot: ${snapshotId}`);
+      const response = await this.ensureHttpClient().post(
+        `/datasets/v3/snapshot/${snapshotId}/cancel`,
+        {},
+      );
+      this.logger.log(
+        `BrightData snapshot ${snapshotId} cancel response: ${JSON.stringify(response.data)}`,
+      );
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      this.logger.warn(
+        `Failed to stop BrightData snapshot ${snapshotId}: ${
+          axiosError.response
+            ? `${axiosError.response.status} ${JSON.stringify(axiosError.response.data)}`
+            : axiosError.message
+        }`,
+      );
     }
   }
 }

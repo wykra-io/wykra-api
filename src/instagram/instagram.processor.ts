@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 
 import { QueueName } from '@libs/queue';
-import { TaskStatus } from '@libs/entities';
+import { TaskStatus, User } from '@libs/entities';
 import {
   InstagramSearchProfilesRepository,
   TasksRepository,
@@ -18,6 +18,7 @@ import { TaskCancellationService } from '../tasks/task-cancellation.service';
 interface InstagramSearchJobData {
   taskId: string;
   query: string;
+  userId?: number;
 }
 
 interface InstagramCommentsSuspiciousJobData {
@@ -120,10 +121,15 @@ export class InstagramProcessor {
    */
   @Process('search')
   public async search(job: Job<InstagramSearchJobData>): Promise<void> {
-    const { taskId, query } = job.data;
+    const { taskId, query, userId } = job.data;
     const startTime = Date.now();
     const controller = this.taskCancellation.register(taskId);
     const signal = controller.signal;
+
+    console.log(`InstagramProcessor.search started for taskId: ${taskId}`, {
+      query,
+      userId,
+    });
 
     // Track queue wait time
     const queuedAt = job.timestamp; // Time when job was added to queue
@@ -139,6 +145,18 @@ export class InstagramProcessor {
       if (existing?.status === TaskStatus.Cancelled) {
         return;
       }
+
+      // Get user settings for reasoning effort
+      let reasoningEffort: string | null = 'none';
+      if (userId) {
+        const user = await this.tasksRepo.manager
+          .getRepository(User)
+          .findOneBy({ id: userId });
+        if (user) {
+          reasoningEffort = user.isAdmin ? user.reasoningEffort : 'none';
+        }
+      }
+
       // Update task status to running
       await this.tasksRepo.update(taskId, {
         status: TaskStatus.Running,
@@ -155,9 +173,12 @@ export class InstagramProcessor {
         signal,
       });
 
-      // Category is required – fail fast if it's missing
+      // Category is required – use a default if it's missing to avoid failing
       if (!context.category) {
-        throw new Error('Category is required to perform Instagram search');
+        context.category = 'influencers';
+        this.logger.log(
+          `No category found in query "${query}", defaulting to "influencers"`,
+        );
       }
 
       // Determine which profiles to exclude based on similar past searches
@@ -201,7 +222,7 @@ Do not invent usernames.`;
       const stage1Response = await this.webSearchService.searchUrls(
         stage1Prompt,
         1,
-        { signal },
+        { signal, reasoningEffort },
       );
 
       const urlRegex = /https?:\/\/[^\s]+/g;
@@ -371,6 +392,7 @@ Do not invent usernames.`;
       const processingDuration = (Date.now() - startTime) / 1000;
 
       if (this.isCancelledError(error)) {
+        this.logger.log(`Instagram search task ${taskId} was cancelled`);
         await this.tasksRepo.update(taskId, {
           status: TaskStatus.Cancelled,
           error: 'Cancelled by user',
@@ -466,6 +488,7 @@ Do not invent usernames.`;
       const processingDuration = (Date.now() - startTime) / 1000;
 
       if (this.isCancelledError(error)) {
+        this.logger.log(`Instagram profile task ${taskId} was cancelled`);
         await this.tasksRepo.update(taskId, {
           status: TaskStatus.Cancelled,
           error: 'Cancelled by user',
@@ -564,6 +587,7 @@ Do not invent usernames.`;
       const processingDuration = (Date.now() - startTime) / 1000;
 
       if (this.isCancelledError(error)) {
+        this.logger.log(`Instagram comments suspicious task ${taskId} was cancelled`);
         await this.tasksRepo.update(taskId, {
           status: TaskStatus.Cancelled,
           error: 'Cancelled by user',

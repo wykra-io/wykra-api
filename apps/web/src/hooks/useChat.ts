@@ -213,99 +213,130 @@ export function useChat({ enabled }: { enabled: boolean }) {
     [enabled, successRequestsBySessionId, successRequestsLoadingBySessionId],
   );
 
-  const loadChatHistory = useCallback(async () => {
-    if (!enabled || !activeSessionId) return null;
-    if (activeSessionId < 0) return null;
-    const sessionIdFetched = activeSessionId;
-    try {
-      const historyResp = await apiGet<
-        { data: Array<ChatMessage> } | Array<ChatMessage>
-      >(`/api/v1/chat/history?sessionId=${sessionIdFetched}`);
-      const historyData = Array.isArray(historyResp)
-        ? historyResp
-        : historyResp.data || [];
+  const loadChatHistory = useCallback(
+    async (sessionIdOverride?: number) => {
+      const sessionIdToFetch = sessionIdOverride ?? activeSessionId;
+      if (!enabled || !sessionIdToFetch) return null;
+      if (sessionIdToFetch < 0) return null;
+      const sessionIdFetched = sessionIdToFetch;
+      try {
+        const historyResp = await apiGet<
+          { data: Array<ChatMessage> } | Array<ChatMessage>
+        >(`/api/v1/chat/history?sessionId=${sessionIdFetched}`);
+        const historyData = Array.isArray(historyResp)
+          ? historyResp
+          : historyResp.data || [];
 
-      const loadedMessages = normalizeHistoryMessages(historyData);
+        const loadedMessages = normalizeHistoryMessages(historyData);
 
-      if (activeSessionIdRef.current !== sessionIdFetched) {
-        return loadedMessages;
-      }
-
-      setMessages(loadedMessages);
-      setSuccessRequestsBySessionId((prev) => ({
-        ...prev,
-        [sessionIdFetched]: extractSuccessRequests(
-          sessionIdFetched,
-          loadedMessages,
-        ),
-      }));
-
-      if (loadedMessages.length > 0) {
-        isInitialLoadRef.current = false;
-      }
-
-      return loadedMessages;
-    } catch (error) {
-      console.warn(
-        `Failed to load chat history: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return null;
-    }
-  }, [enabled, activeSessionId]);
-
-  const loadSessions = useCallback(async () => {
-    if (!enabled) return;
-    try {
-      const resp = await apiGet<{ data?: ChatSession[] } | ChatSession[]>(
-        `/api/v1/chat/sessions`,
-      );
-      const list = Array.isArray(resp) ? resp : resp.data || [];
-
-      if (pendingPlaceholderIdRef.current !== null) {
-        return;
-      }
-
-      setSessions((prev) => {
-        const currentActiveId = activeSessionIdRef.current;
-        const activeInList = list.some(
-          (s: ChatSession) => Number(s.id) === Number(currentActiveId),
-        );
-        if (
-          currentActiveId != null &&
-          !activeInList &&
-          prev.some((s) => Number(s.id) === Number(currentActiveId))
-        ) {
-          const activeSession = prev.find(
-            (s) => Number(s.id) === Number(currentActiveId),
-          );
-          if (activeSession) {
-            return [
-              activeSession,
-              ...list.filter((s: ChatSession) => s.id !== activeSession.id),
-            ];
-          }
+        if (activeSessionIdRef.current !== sessionIdFetched) {
+          return loadedMessages;
         }
-        return list;
-      });
-      // Avoid stale in-flight loads overwriting a newer selection (e.g. after "New chat").
-      if (activeSessionIdRef.current == null && list.length > 0) {
-        setActiveSessionId(list[0].id);
-      }
 
-      // Prefetch success request indexes so the side menu can render submenus.
-      // Keep it bounded to avoid flooding the API if the user has many sessions.
-      const prefetchTargets = list.slice(0, 25);
-      void Promise.allSettled(
-        prefetchTargets.map((s) => loadSuccessRequestsForSession(s.id)),
-      );
-    } catch (error) {
-      console.warn(
-        `Failed to load chat sessions: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }, [activeSessionId, enabled, loadSuccessRequestsForSession]);
+        setMessages(loadedMessages);
+        setSuccessRequestsBySessionId((prev) => ({
+          ...prev,
+          [sessionIdFetched]: extractSuccessRequests(
+            sessionIdFetched,
+            loadedMessages,
+          ),
+        }));
+
+        if (loadedMessages.length > 0) {
+          window.setTimeout(() => {
+            isInitialLoadRef.current = false;
+          }, 100);
+        }
+
+        return loadedMessages;
+      } catch (error) {
+        console.warn(
+          `Failed to load chat history: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return null;
+      }
+    },
+    [enabled, activeSessionId],
+  );
+
+  const loadSessions = useCallback(
+    async ({
+      skipHistory = false,
+      activeSessionIdOverride = null,
+    }: {
+      skipHistory?: boolean;
+      activeSessionIdOverride?: number | null;
+    } = {}) => {
+      if (!enabled) return;
+      try {
+        const resp = await apiGet<{ data?: ChatSession[] } | ChatSession[]>(
+          `/api/v1/chat/sessions`,
+        );
+        const list = Array.isArray(resp) ? resp : resp.data || [];
+
+        if (pendingPlaceholderIdRef.current !== null) {
+          return;
+        }
+
+        setSessions((prev) => {
+          const currentActiveId =
+            activeSessionIdOverride ?? activeSessionIdRef.current;
+          const activeInList = list.some(
+            (s: ChatSession) => Number(s.id) === Number(currentActiveId),
+          );
+          if (
+            currentActiveId != null &&
+            !activeInList &&
+            prev.some((s) => Number(s.id) === Number(currentActiveId))
+          ) {
+            const activeSession = prev.find(
+              (s) => Number(s.id) === Number(currentActiveId),
+            );
+            if (activeSession) {
+              return [
+                activeSession,
+                ...list.filter((s: ChatSession) => s.id !== activeSession.id),
+              ];
+            }
+          }
+          return list;
+        });
+
+        const nextActiveId =
+          activeSessionIdOverride ?? activeSessionIdRef.current;
+        // Avoid stale in-flight loads overwriting a newer selection (e.g. after "New chat").
+        if (nextActiveId == null && list.length > 0) {
+          setActiveSessionId(list[0].id);
+          if (!skipHistory) {
+            void loadChatHistory(list[0].id);
+          }
+        } else if (nextActiveId != null && !skipHistory) {
+          void loadChatHistory(nextActiveId);
+        }
+
+        // Prefetch success request indexes so the side menu can render submenus.
+        // Keep it bounded to avoid flooding the API if the user has many sessions.
+        const prefetchTargets = list.slice(0, 25);
+        void Promise.allSettled(
+          prefetchTargets.map((s) => loadSuccessRequestsForSession(s.id)),
+        );
+      } catch (error) {
+        console.warn(
+          `Failed to load chat sessions: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    },
+    [
+      enabled,
+      loadSuccessRequestsForSession,
+      loadChatHistory,
+      setActiveSessionId,
+    ],
+  );
 
   useEffect(() => {
     if (!enabled) {
@@ -315,11 +346,19 @@ export function useChat({ enabled }: { enabled: boolean }) {
       setTaskStopping(false);
       setChatInput('');
       setChatSending(false);
+      setSessions([]);
       return;
     }
-    if (activeSessionId !== null && activeSessionId < 0) {
+
+    // Initial load of sessions
+    void loadSessions();
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled || activeSessionId === null || activeSessionId < 0) {
       return;
     }
+
     // After replacing placeholder with real session, only load history so we don't
     // overwrite the list and end up selecting the wrong chat.
     if (justReplacedPlaceholderRef.current) {
@@ -327,8 +366,10 @@ export function useChat({ enabled }: { enabled: boolean }) {
       void loadChatHistory();
       return;
     }
-    void loadSessions().then(() => void loadChatHistory());
-  }, [enabled, activeSessionId, loadChatHistory, loadSessions]);
+
+    // Load history when active session changes
+    void loadChatHistory();
+  }, [enabled, activeSessionId]);
 
   // Reset "initial load" when switching session so we scroll once when loading that session's history.
   useEffect(() => {
@@ -341,7 +382,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
     let isCancelled = false;
     const processingPrefix = 'Processing your request';
     const isProcessingMessage = (content: string | undefined) =>
-      typeof content === 'string' && content.startsWith(processingPrefix);
+      typeof content === 'string' &&
+      (content.includes(processingPrefix) || content === 'Stopping...');
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -366,11 +408,20 @@ export function useChat({ enabled }: { enabled: boolean }) {
           .trim()
           .toLowerCase();
 
+        console.log(`Polling task ${taskId}: status=${status}`);
+
+        // Verify that the taskId we are polling for is still the active one
+        if (activeTaskIdRef.current !== taskId || isCancelled) return;
+
         if (
           status === 'completed' ||
           status === 'failed' ||
           status === 'cancelled'
         ) {
+          // If the task is already finished, stop polling and update UI.
+          setActiveTaskId((current) => (current === taskId ? null : current));
+          setTaskStopping(false);
+
           for (let attempt = 0; attempt < 10; attempt++) {
             const history = await loadChatHistory();
             const stillProcessing =
@@ -416,9 +467,6 @@ export function useChat({ enabled }: { enabled: boolean }) {
             }
             return next;
           });
-
-          setActiveTaskId(null);
-          setTaskStopping(false);
         }
       } catch (error) {
         console.warn(
@@ -459,13 +507,15 @@ export function useChat({ enabled }: { enabled: boolean }) {
 
   const stopActiveTask = useCallback(async () => {
     const taskId = activeTaskIdRef.current;
+    console.log('stopActiveTask called', { taskId, taskStopping });
     if (!enabled || !taskId || taskStopping) return;
 
     setTaskStopping(true);
 
     const processingPrefix = 'Processing your request';
     const isProcessingMessage = (content: string | undefined) =>
-      typeof content === 'string' && content.startsWith(processingPrefix);
+      typeof content === 'string' &&
+      (content.includes(processingPrefix) || content === 'Stopping...');
 
     // Optimistically reflect stopping in the UI.
     setMessages((prev) => {
@@ -483,23 +533,9 @@ export function useChat({ enabled }: { enabled: boolean }) {
 
     try {
       await apiPost(`/api/v1/tasks/${taskId}/stop`, {});
-      setMessages((prev) => {
-        const idx = [...prev]
-          .reverse()
-          .findIndex(
-            (m) => m.role === 'assistant' && isProcessingMessage(m.content),
-          );
-        if (idx === -1) return prev;
-        const realIdx = prev.length - 1 - idx;
-        const next = [...prev];
-        const isSearch =
-          next[realIdx].detectedEndpoint?.includes('/search') ?? false;
-        next[realIdx] = {
-          ...next[realIdx],
-          content: isSearch ? 'Search cancelled' : 'Analyze cancelled',
-        };
-        return next;
-      });
+      // We don't need to manually update messages here because handleTaskPolling
+      // will see the 'cancelled' status and update the message content.
+      // However, we MUST reset taskStopping so the UI doesn't stay in "Stopping..." mode.
     } catch (error) {
       console.warn(
         `Failed to stop task ${taskId}: ${
@@ -522,7 +558,6 @@ export function useChat({ enabled }: { enabled: boolean }) {
         return next;
       });
     } finally {
-      setActiveTaskId(null);
       setTaskStopping(false);
     }
   }, [enabled, taskStopping]);
@@ -533,6 +568,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
       const query = chatInput.trim();
       if (!query || !canSend || !activeSessionId) return;
 
+      console.log('Chat onSubmit triggered', { query, activeSessionId });
+
       const userMessage: ChatMessage = {
         id: `local-${Date.now()}`,
         role: 'user',
@@ -542,6 +579,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
       setMessages((prev) => [...prev, userMessage]);
       setChatInput('');
       setChatSending(true);
+      setActiveTaskId(null);
 
       try {
         const response = await apiPost<ChatPostResponse>(`/api/v1/chat`, {
@@ -550,10 +588,14 @@ export function useChat({ enabled }: { enabled: boolean }) {
         });
 
         const { taskId } = normalizeChatPostResponse(response);
-        setActiveTaskId(taskId);
+        console.log('Chat response received', { taskId, response });
+        if (taskId) {
+          setActiveTaskId(taskId);
+        }
 
         await loadChatHistory();
       } catch (error) {
+        console.error('Chat onSubmit error', error);
         const errorMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
@@ -566,7 +608,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
         window.setTimeout(() => chatInputRef.current?.focus(), 0);
       }
     },
-    [canSend, chatInput, loadChatHistory],
+    [canSend, chatInput, loadChatHistory, activeSessionId],
   );
 
   const createNewSession = useCallback(async () => {
@@ -634,6 +676,11 @@ export function useChat({ enabled }: { enabled: boolean }) {
         prev.map((s) => (s.id === tempId ? serverSession : s)),
       );
       setActiveSessionId(createdId);
+      // Refresh sessions to ensure the new session is correctly in the list from the server
+      void loadSessions({
+        skipHistory: true,
+        activeSessionIdOverride: createdId,
+      });
     } catch (error) {
       console.warn(
         `Failed to create chat session: ${
@@ -650,6 +697,15 @@ export function useChat({ enabled }: { enabled: boolean }) {
       });
     }
   }, [sessions]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({
+        behavior: isInitialLoadRef.current ? 'auto' : 'smooth',
+      });
+    }
+  }, [messages]);
 
   const clearFocusMessageId = useCallback(() => {
     setFocusMessageId(null);
@@ -715,6 +771,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
 
       try {
         await apiDelete(`/api/v1/chat/sessions/${sessionId}`);
+        // Refresh sessions to ensure the list is in sync with the server
+        void loadSessions({ skipHistory: true });
       } catch (error) {
         console.warn(
           `Failed to delete session ${sessionId}: ${
