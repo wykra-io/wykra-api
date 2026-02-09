@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { ChatOpenAI } from '@langchain/openai';
@@ -470,7 +470,7 @@ IMPORTANT formatting rules:
     userId: number,
     sessionId?: number,
   ): Promise<ChatMessage[]> {
-    if (sessionId) {
+    if (sessionId && sessionId > 0) {
       return await this.chatMessagesRepo.findByUserIdAndSessionId(
         userId,
         sessionId,
@@ -761,7 +761,7 @@ If you cannot extract a clear profile username, respond with:
         role: ChatMessageRole.Assistant,
         content: promptMessage,
         detectedEndpoint: null,
-        sessionId,
+        sessionId: sessionId && sessionId > 0 ? sessionId : null,
       });
 
       const duration = (Date.now() - startTime) / 1000;
@@ -774,7 +774,7 @@ If you cannot extract a clear profile username, respond with:
       role: ChatMessageRole.Assistant,
       content: this.getProcessingMessageContent(detectedEndpoint),
       detectedEndpoint: null,
-      sessionId,
+      sessionId: sessionId && sessionId > 0 ? sessionId : null,
     });
     const processingMessageId = processingMsg?.id ?? null;
     console.log(`Created processing message: ${processingMessageId}`);
@@ -803,7 +803,7 @@ If you cannot extract a clear profile username, respond with:
             role: ChatMessageRole.Assistant,
             content: rateLimitMessage,
             detectedEndpoint: null,
-            sessionId,
+            sessionId: sessionId && sessionId > 0 ? sessionId : null,
           });
         }
         const duration = (Date.now() - startTime) / 1000;
@@ -850,18 +850,19 @@ If you cannot extract a clear profile username, respond with:
    */
   public async chat(dto: ChatDTO, userId: number): Promise<ChatResponse> {
     const startTime = Date.now();
-    console.log(`Chat request started: ${JSON.stringify(dto)}, userId: ${userId}`);
-    this.logger.log(`Chat request started: ${JSON.stringify(dto)}, userId: ${userId}`);
-    // Force a log to the terminal
-    process.stdout.write(`Chat request started: ${JSON.stringify(dto)}, userId: ${userId}\n`);
-    // Also try stderr
-    process.stderr.write(`Chat request started: ${JSON.stringify(dto)}, userId: ${userId}\n`);
+    this.logger.log(`Chat request started: userId=${userId}, sessionId=${dto.sessionId}, query="${dto.query.substring(0, 50)}..."`);
+    
     try {
-      this.logger.log(
-        `Processing chat query: ${dto.query.substring(0, 50)}...`,
-      );
+      if (dto.sessionId && dto.sessionId > 0) {
+        const session = await this.chatSessionsRepo.findByUserIdAndId(userId, dto.sessionId);
+        if (!session) {
+          this.logger.warn(`Session ${dto.sessionId} not found for user ${userId}`);
+          throw new BadRequestException(`Chat session not found`);
+        }
+      }
 
       const history = await this.getHistory(userId, dto.sessionId);
+      this.logger.log(`Loaded history for userId=${userId}, sessionId=${dto.sessionId}: ${history.length} messages`);
       const { content: rawContent } = await this.invokeChatAssistant(
         dto.query,
         history,
@@ -874,7 +875,7 @@ If you cannot extract a clear profile username, respond with:
         role: ChatMessageRole.User,
         content: dto.query,
         detectedEndpoint: null,
-        sessionId: dto.sessionId,
+        sessionId: dto.sessionId && dto.sessionId > 0 ? dto.sessionId : null,
       });
 
       if (detectedEndpoint) {
@@ -894,7 +895,7 @@ If you cannot extract a clear profile username, respond with:
         role: ChatMessageRole.Assistant,
         content: cleanContent,
         detectedEndpoint: null,
-        sessionId: dto.sessionId,
+        sessionId: dto.sessionId && dto.sessionId > 0 ? dto.sessionId : null,
       });
 
       const duration = (Date.now() - startTime) / 1000;

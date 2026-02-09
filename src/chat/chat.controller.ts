@@ -141,7 +141,8 @@ export class ChatController {
       !Number.isNaN(numericSessionId) &&
       Number.isInteger(numericSessionId) &&
       numericSessionId >= -2147483648 &&
-      numericSessionId <= 2147483647
+      numericSessionId <= 2147483647 &&
+      numericSessionId > 0
         ? numericSessionId
         : undefined;
 
