@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import WebApp from '@twa-dev/sdk';
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api';
 import type {
@@ -359,9 +358,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
     }
 
     // Initial load of sessions
-    // If we're in Telegram, we want to auto-create a session if none exist.
-    const isTelegram = !!WebApp.initData;
-    void loadSessions({ autoCreateIfEmpty: isTelegram });
+    // Auto-create a session if none exist.
+    void loadSessions({ autoCreateIfEmpty: true });
   }, [enabled]);
 
   useEffect(() => {
