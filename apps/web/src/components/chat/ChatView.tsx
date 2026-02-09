@@ -117,12 +117,22 @@ export function ChatView({
             />
             <button
               type={activeTaskId ? 'button' : 'submit'}
-              onClick={(e) => {
+              onPointerDown={(e) => {
+                // Use pointer down to avoid some mobile click delay/interference
                 if (activeTaskId) {
                   e.preventDefault();
                   e.stopPropagation();
                   onStopTask?.();
                 }
+              }}
+              onClick={(e) => {
+                if (activeTaskId) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+                // If it's a submit type, the form onSubmit will handle it.
+                // But for some mobile browsers, explicit trigger helps.
               }}
               disabled={
                 activeTaskId

@@ -21,12 +21,16 @@ export function App() {
   const { isAuthed, me, startGithubSignIn, telegramSignIn, emailSignIn, logout } = useAuth();
   const chat = useChat({ enabled: isAuthed });
 
-  const attemptedTelegramAutoLoginRef = useRef(false);
   useEffect(() => {
     if (attemptedTelegramAutoLoginRef.current) return;
 
     const token = getApiToken();
-    if (!isTelegramMiniApp() || token) return;
+    if (!isTelegramMiniApp() || token) {
+      if (isTelegramMiniApp() && token) {
+        prepareTelegramMiniAppUi();
+      }
+      return;
+    }
 
     attemptedTelegramAutoLoginRef.current = true;
 
@@ -49,7 +53,11 @@ export function App() {
               <button
                 type="button"
                 className="sideMenuToggle inlineToggle"
-                onClick={() => setSideMenuOpen(!sideMenuOpen)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSideMenuOpen(!sideMenuOpen);
+                }}
                 aria-label="Toggle menu"
               >
                 {sideMenuOpen ? (
