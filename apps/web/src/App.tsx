@@ -20,6 +20,7 @@ export function App() {
   const [sideMenuOpen, setSideMenuOpen] = useState(false);
   const { isAuthed, me, startGithubSignIn, telegramSignIn, emailSignIn, logout } = useAuth();
   const chat = useChat({ enabled: isAuthed });
+  const attemptedTelegramAutoLoginRef = useRef(false);
 
   useEffect(() => {
     if (attemptedTelegramAutoLoginRef.current) return;
