@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -38,6 +39,7 @@ export class AuthService {
     const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
     return derivedKey.toString('hex') === key;
   }
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
     @InjectRepository(User) private readonly usersRepo: Repository<User>,
@@ -262,11 +264,15 @@ export class AuthService {
       .sort()
       .join('\n');
 
+    this.logger.log(`Telegram auth attempt. dataStr: ${dataStr.replace(/\n/g, ' | ')}`);
+
     const checksum = createHmac('sha256', secretKey)
       .update(dataStr)
       .digest('hex');
 
     if (checksum !== params.hash) {
+      this.logger.error(`Telegram auth checksum mismatch. Expected: ${params.hash}, Computed: ${checksum}`);
+      this.logger.error(`Data string used for HMAC: ${dataStr}`);
       throw new UnauthorizedException('Invalid code');
     }
 
