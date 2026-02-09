@@ -40,7 +40,8 @@ function normalizeMeResponse(payload: unknown): MeResponse | null {
       : false;
 
   const email =
-    'email' in candidate && typeof (candidate as { email?: unknown }).email === 'string'
+    'email' in candidate &&
+    typeof (candidate as { email?: unknown }).email === 'string'
       ? (candidate as { email: string }).email
       : null;
 
@@ -182,5 +183,31 @@ export function useAuth() {
     [refreshMe],
   );
 
-  return { isAuthed, me, startGithubSignIn, telegramSignIn, emailSignIn, logout };
+  const googleSignIn = useCallback(
+    async (googleAccessToken: string) => {
+      const resp = await apiPost<unknown>(`/api/v1/auth/social`, {
+        provider: 'google',
+        code: googleAccessToken,
+      });
+
+      const token = extractToken(resp);
+      if (!token) {
+        throw new Error('Google auth response did not include token');
+      }
+
+      setApiToken(token);
+      await refreshMe();
+    },
+    [refreshMe],
+  );
+
+  return {
+    isAuthed,
+    me,
+    startGithubSignIn,
+    telegramSignIn,
+    googleSignIn,
+    emailSignIn,
+    logout,
+  };
 }

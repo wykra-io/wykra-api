@@ -130,6 +130,42 @@ export class AuthService {
     return { token };
   }
 
+  public async googleAuthToApiToken(token: string): Promise<AuthTokenResponse> {
+    const googleRes = await fetch(
+      `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${token}`,
+    );
+    if (!googleRes.ok) {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+    const googleData = (await googleRes.json()) as {
+      sub: string;
+      email: string;
+      name: string;
+      picture: string;
+    };
+
+    let user = await this.usersRepo.findOne({
+      where: { googleId: googleData.sub },
+    });
+
+    if (!user) {
+      user = this.usersRepo.create({
+        googleId: googleData.sub,
+        googleEmail: googleData.email,
+        googleName: googleData.name,
+        googlePicture: googleData.picture,
+      });
+    } else {
+      user.googleEmail = googleData.email;
+      user.googleName = googleData.name;
+      user.googlePicture = googleData.picture;
+    }
+
+    await this.usersRepo.save(user);
+    const apiToken = await this.rotateApiToken(user);
+    return { token: apiToken };
+  }
+
   public async emailRegister(dto: EmailAuthDto): Promise<AuthTokenResponse> {
     const existing = await this.usersRepo.findOne({
       where: { email: dto.email.toLowerCase() },

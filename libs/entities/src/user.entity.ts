@@ -61,6 +61,19 @@ export class User extends Model {
   @Column({ name: 'password_hash', type: 'text', nullable: true, select: false })
   passwordHash!: string | null;
 
+  @Index('users_google_id_idx')
+  @Column({ name: 'google_id', type: 'text', unique: true, nullable: true })
+  googleId!: string | null;
+
+  @Column({ name: 'google_email', type: 'text', nullable: true })
+  googleEmail!: string | null;
+
+  @Column({ name: 'google_name', type: 'text', nullable: true })
+  googleName!: string | null;
+
+  @Column({ name: 'google_picture', type: 'text', nullable: true })
+  googlePicture!: string | null;
+
   @Column({
     name: 'reasoning_effort',
     type: 'text',

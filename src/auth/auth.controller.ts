@@ -67,6 +67,9 @@ export class AuthController {
     if (dto.provider === 'telegram') {
       return this.authService.telegramAuthToApiTokenFromTelegramCode(dto.code);
     }
+    if (dto.provider === 'google') {
+      return this.authService.googleAuthToApiToken(dto.code);
+    }
     throw new UnauthorizedException('Unsupported provider');
   }
 
@@ -99,12 +102,14 @@ export class AuthController {
     const login =
       user.githubLogin ||
       user.telegramUsername ||
+      user.googleName ||
       user.email ||
       [user.telegramFirstName, user.telegramLastName]
         .filter(Boolean)
         .join(' ') ||
       'User';
-    const avatar = user.githubAvatarUrl ?? user.telegramPhotoUrl ?? null;
+    const avatar =
+      user.githubAvatarUrl ?? user.telegramPhotoUrl ?? user.googlePicture ?? null;
 
     return {
       githubLogin: login,
