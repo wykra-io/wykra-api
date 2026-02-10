@@ -5,7 +5,7 @@ import { SideMenu } from './components/SideMenu';
 import { Topbar } from './components/Topbar';
 import { ChatView } from './components/chat/ChatView';
 import { AdminDashboard } from './components/AdminDashboard';
-import { getApiToken } from './api';
+import { apiGet, getApiToken } from './api';
 import { useAuth } from './hooks/useAuth';
 import { useChat } from './hooks/useChat';
 import {
@@ -16,6 +16,8 @@ import {
 
 export function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalInfo, setAuthModalInfo] = useState<string | null>(null);
+  const [authModalError, setAuthModalError] = useState<string | null>(null);
   const [showDashboard, setShowDashboard] = useState(false);
   const [sideMenuOpen, setSideMenuOpen] = useState(false);
   const {
@@ -29,6 +31,38 @@ export function App() {
   } = useAuth();
   const chat = useChat({ enabled: isAuthed });
   const attemptedTelegramAutoLoginRef = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (!token) return;
+
+    const confirmEmail = async () => {
+      try {
+        const confirmUrl = `/api/v1/auth/confirm-email?token=${encodeURIComponent(token)}`;
+        await apiGet(confirmUrl);
+        setAuthModalInfo(
+          'Email confirmed. You can sign in with your credentials.',
+        );
+        setAuthModalError(null);
+      } catch (error) {
+        setAuthModalError(
+          error instanceof Error ? error.message : 'Email confirmation failed',
+        );
+        setAuthModalInfo(null);
+      } finally {
+        setAuthModalOpen(true);
+        params.delete('token');
+        const search = params.toString();
+        const newUrl = `${window.location.pathname}${
+          search ? `?${search}` : ''
+        }${window.location.hash}`;
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    };
+
+    void confirmEmail();
+  }, []);
 
   const handleGoogleSignIn = () => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -289,13 +323,19 @@ export function App() {
 
       <AuthModal
         open={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        onClose={() => {
+          setAuthModalOpen(false);
+          setAuthModalInfo(null);
+          setAuthModalError(null);
+        }}
         onGithubSignIn={startGithubSignIn}
         onGoogleSignIn={handleGoogleSignIn}
         onTelegramSignIn={
           isTelegramMiniApp() ? () => void telegramSignIn() : undefined
         }
         onEmailSignIn={emailSignIn}
+        infoMessage={authModalInfo}
+        errorMessage={authModalError}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Props = {
   open: boolean;
@@ -11,6 +11,8 @@ type Props = {
     password: string,
     isRegister: boolean,
   ) => Promise<{ confirmationRequired?: boolean; message?: string } | void>;
+  infoMessage?: string | null;
+  errorMessage?: string | null;
 };
 
 export function AuthModal({
@@ -20,6 +22,8 @@ export function AuthModal({
   onGoogleSignIn,
   onTelegramSignIn,
   onEmailSignIn,
+  infoMessage,
+  errorMessage,
 }: Props) {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
@@ -29,6 +33,31 @@ export function AuthModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (infoMessage) {
+      setInfo(infoMessage);
+      setError(null);
+      setIsRegister(false);
+      setPassword('');
+      setConfirmPassword('');
+    }
+  }, [infoMessage]);
+
+  useEffect(() => {
+    if (errorMessage) {
+      setError(errorMessage);
+      setInfo(null);
+    }
+  }, [errorMessage]);
+
+  useEffect(() => {
+    if (!open) {
+      setError(null);
+      setInfo(null);
+      setLoading(false);
+    }
+  }, [open]);
 
   if (!open) return null;
 
