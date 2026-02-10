@@ -131,6 +131,7 @@ export class ChatController {
     if (!user) {
       throw new Error('User not found');
     }
+    console.log(`ChatController.getHistory: userId=${user.id}, sessionId=${sessionId}`);
     const numericSessionId =
       typeof sessionId === 'string' && sessionId.trim().length > 0
         ? Number(sessionId)
@@ -174,6 +175,7 @@ export class ChatController {
     if (!user) {
       throw new Error('User not found');
     }
+    console.log(`ChatController.chat: userId=${user.id}, query="${dto.query.substring(0, 50)}..."`);
     return this.chatService.chat(dto, user.id);
   }
 }

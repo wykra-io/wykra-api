@@ -35,4 +35,11 @@ export class ChatMessage extends Model {
 
   @Column({ name: 'detected_endpoint', type: 'text', nullable: true })
   detectedEndpoint!: string | null;
+
+  @Column({
+    name: 'client_created_at',
+    type: 'timestamp',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
+  clientCreatedAt!: Date;
 }

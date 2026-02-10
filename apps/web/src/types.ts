@@ -21,10 +21,16 @@ export type ChatSession = {
 };
 
 export type ChatPostResponse = {
-  data?: { response: string; detectedEndpoint?: string; taskId?: string };
+  data?: {
+    response: string;
+    detectedEndpoint?: string;
+    taskId?: string;
+    sessionId?: number;
+  };
   response?: string;
   detectedEndpoint?: string;
   taskId?: string;
+  sessionId?: number;
 };
 
 export type TaskStatusResponse = {

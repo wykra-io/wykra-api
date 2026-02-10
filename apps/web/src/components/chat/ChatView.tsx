@@ -55,7 +55,7 @@ export function ChatView({
 
       if (el) {
         lastHandledFocusIdRef.current = focusMessageId;
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         el.classList.add('chatMessageFocused');
         window.setTimeout(
           () => el.classList.remove('chatMessageFocused'),
