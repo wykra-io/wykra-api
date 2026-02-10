@@ -42,7 +42,7 @@ export class ChatMessagesRepository {
     try {
       const result = await this.repository.find({
         where: { userId },
-        order: { createdAt: 'ASC' },
+        order: { clientCreatedAt: 'ASC', id: 'ASC' },
       });
       const duration = (Date.now() - startTime) / 1000;
       this.metrics?.recordDbQuery('findByUserId', 'ChatMessage', duration);
@@ -57,16 +57,31 @@ export class ChatMessagesRepository {
     }
   }
 
+  public async findById(id: number): Promise<ChatMessage | null> {
+    const startTime = Date.now();
+    try {
+      const result = await this.repository.findOne({ where: { id } });
+      const duration = (Date.now() - startTime) / 1000;
+      this.metrics?.recordDbQuery('findById', 'ChatMessage', duration);
+      return result;
+    } catch (error) {
+      this.metrics?.recordDbQueryError('findById', 'ChatMessage', 'query_error');
+      throw error;
+    }
+  }
+
   public async findByUserIdAndSessionId(
     userId: number,
     sessionId: number,
   ): Promise<ChatMessage[]> {
     const startTime = Date.now();
     try {
+      console.log(`ChatMessagesRepository.findByUserIdAndSessionId: userId=${userId}, sessionId=${sessionId}`);
       const result = await this.repository.find({
         where: { userId, sessionId },
-        order: { createdAt: 'ASC' },
+        order: { clientCreatedAt: 'ASC', id: 'ASC' },
       });
+      console.log(`ChatMessagesRepository.findByUserIdAndSessionId success: found ${result.length} messages`);
       const duration = (Date.now() - startTime) / 1000;
       this.metrics?.recordDbQuery(
         'findByUserIdAndSessionId',
@@ -75,6 +90,7 @@ export class ChatMessagesRepository {
       );
       return result;
     } catch (error) {
+      console.error(`ChatMessagesRepository.findByUserIdAndSessionId error: ${error instanceof Error ? error.message : String(error)}`);
       this.metrics?.recordDbQueryError(
         'findByUserIdAndSessionId',
         'ChatMessage',
@@ -90,10 +106,23 @@ export class ChatMessagesRepository {
   ): Promise<void> {
     const startTime = Date.now();
     try {
-      await this.repository.update({ id }, updates);
+      console.log(`ChatMessagesRepository.update: id=${id}, updates=${JSON.stringify(updates).substring(0, 100)}`);
+      // Use save instead of update to ensure subscribers/hooks are triggered and 
+      // because update() in TypeORM can sometimes be finicky with complex entities.
+      const entity = await this.repository.findOne({ where: { id } });
+      if (entity) {
+        Object.assign(entity, updates);
+        const saved = await this.repository.save(entity);
+        console.log(`ChatMessagesRepository.update success: id=${id}, savedContentLen=${saved.content.length}`);
+      } else {
+        console.warn(`ChatMessagesRepository.update: entity ${id} not found`);
+        // Fallback to regular update if entity not found (shouldn't happen)
+        await this.repository.update({ id }, updates);
+      }
       const duration = (Date.now() - startTime) / 1000;
       this.metrics?.recordDbQuery('update', 'ChatMessage', duration);
     } catch (error) {
+      console.error(`ChatMessagesRepository.update error: ${error instanceof Error ? error.message : String(error)}`);
       this.metrics?.recordDbQueryError('update', 'ChatMessage', 'update_error');
       throw error;
     }

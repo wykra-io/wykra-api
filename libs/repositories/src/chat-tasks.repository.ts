@@ -40,16 +40,34 @@ export class ChatTasksRepository {
   public async findByTaskId(taskId: string): Promise<ChatTask | null> {
     const startTime = Date.now();
     try {
+      console.log(`ChatTasksRepository.findByTaskId: taskId=${taskId}`);
       const result = await this.repository.findOne({ where: { taskId } });
+      console.log(`ChatTasksRepository.findByTaskId success: found=${!!result}, chatMessageId=${result?.chatMessageId}, sessionId=${result?.sessionId}`);
       const duration = (Date.now() - startTime) / 1000;
       this.metrics?.recordDbQuery('findByTaskId', 'ChatTask', duration);
       return result;
     } catch (error) {
+      console.error(`ChatTasksRepository.findByTaskId error: ${error instanceof Error ? error.message : String(error)}`);
       this.metrics?.recordDbQueryError(
         'findByTaskId',
         'ChatTask',
         'query_error',
       );
+      throw error;
+    }
+  }
+
+  public async updateStatus(taskId: string, status: string): Promise<void> {
+    const startTime = Date.now();
+    try {
+      console.log(`ChatTasksRepository.updateStatus: taskId=${taskId}, status=${status}`);
+      await this.repository.update({ taskId }, { status: status as any });
+      console.log(`ChatTasksRepository.updateStatus success: taskId=${taskId}`);
+      const duration = (Date.now() - startTime) / 1000;
+      this.metrics?.recordDbQuery('update', 'ChatTask', duration);
+    } catch (error) {
+      console.error(`ChatTasksRepository.updateStatus error: ${error instanceof Error ? error.message : String(error)}`);
+      this.metrics?.recordDbQueryError('update', 'ChatTask', 'update_error');
       throw error;
     }
   }
@@ -78,7 +96,7 @@ export class ChatTasksRepository {
     try {
       await this.repository.update(
         { userId, chatMessageId: In(chatMessageIds) },
-        { chatMessageId: null },
+        { chatMessageId: null, sessionId: null },
       );
       const duration = (Date.now() - startTime) / 1000;
       this.metrics?.recordDbQuery('update', 'ChatTask', duration);

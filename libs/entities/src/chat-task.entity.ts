@@ -3,6 +3,7 @@ import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { Model } from './base';
 import { User } from './user.entity';
 import { ChatMessage } from './chat-message.entity';
+import { ChatSession } from './chat-session.entity';
 
 @Entity('chat_tasks')
 export class ChatTask extends Model {
@@ -17,6 +18,14 @@ export class ChatTask extends Model {
   @Index('chat_tasks_chat_message_id_idx')
   @Column({ name: 'chat_message_id', type: 'int', nullable: true })
   chatMessageId!: number | null;
+
+  @Index('chat_tasks_session_id_idx')
+  @Column({ name: 'session_id', type: 'int', nullable: true })
+  sessionId!: number | null;
+
+  @ManyToOne(() => ChatSession, { nullable: true })
+  @JoinColumn({ name: 'session_id' })
+  session!: ChatSession | null;
 
   @ManyToOne(() => ChatMessage, { nullable: true })
   @JoinColumn({ name: 'chat_message_id' })

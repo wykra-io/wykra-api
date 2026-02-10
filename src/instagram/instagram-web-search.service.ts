@@ -73,7 +73,7 @@ export class InstagramWebSearchService {
 
     try {
       const reasoning: Record<string, string> = {};
-      if (opts?.reasoningEffort && opts.reasoningEffort !== 'none') {
+      if (opts?.reasoningEffort) {
         reasoning.effort = opts.reasoningEffort;
       }
 

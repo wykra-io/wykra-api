@@ -17,13 +17,48 @@ import {
 
 function normalizeChatPostResponse(payload: ChatPostResponse): {
   taskId: string | null;
+  response: string | null;
+  sessionId: number | null;
 } {
   const chatData =
     payload && typeof payload === 'object' && 'data' in payload && payload.data
       ? payload.data
       : payload;
-  return { taskId: chatData?.taskId ? String(chatData.taskId) : null };
+  const rawSessionId =
+    chatData && typeof chatData === 'object' && 'sessionId' in chatData
+      ? (chatData as { sessionId?: unknown }).sessionId
+      : null;
+  const sessionId =
+    typeof rawSessionId === 'number' && Number.isInteger(rawSessionId)
+      ? rawSessionId
+      : typeof rawSessionId === 'string' && rawSessionId.trim().length > 0
+        ? Number(rawSessionId)
+        : null;
+  const responseValue =
+    chatData && typeof chatData === 'object' && 'response' in chatData
+      ? (chatData as { response?: unknown }).response
+      : null;
+  const response = typeof responseValue === 'string' ? responseValue : null;
+  return {
+    taskId: chatData?.taskId ? String(chatData.taskId) : null,
+    response,
+    sessionId:
+      typeof sessionId === 'number' && Number.isInteger(sessionId)
+        ? sessionId
+        : null,
+  };
 }
+
+const PROCESSING_PREFIX = 'Processing your request';
+const isProcessingMessage = (content: string | undefined) =>
+  typeof content === 'string' &&
+  (content.includes(PROCESSING_PREFIX) ||
+    content === 'Stopping...' ||
+    content === 'Analyze cancelled' ||
+    content === 'Search cancelled');
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export type ChatSuccessRequest = {
   sessionId: number;
@@ -155,6 +190,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
   const isInitialLoadRef = useRef(true);
   const pendingPlaceholderIdRef = useRef<number | null>(null);
   const justReplacedPlaceholderRef = useRef(false);
+  const skipNextHistoryLoadRef = useRef(false);
 
   const activeTaskIdRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<number | null>(null);
@@ -367,6 +403,12 @@ export function useChat({ enabled }: { enabled: boolean }) {
       return;
     }
 
+    if (skipNextHistoryLoadRef.current) {
+      skipNextHistoryLoadRef.current = false;
+      justReplacedPlaceholderRef.current = false;
+      return;
+    }
+
     // After replacing placeholder with real session, only load history so we don't
     // overwrite the list and end up selecting the wrong chat.
     if (justReplacedPlaceholderRef.current) {
@@ -391,16 +433,24 @@ export function useChat({ enabled }: { enabled: boolean }) {
     if (!enabled || !activeTaskId) return;
 
     let isCancelled = false;
-    const processingPrefix = 'Processing your request';
-    const isProcessingMessage = (content: string | undefined) =>
-      typeof content === 'string' &&
-      (content.includes(processingPrefix) ||
-        content === 'Stopping...' ||
-        content === 'Analyze cancelled' ||
-        content === 'Search cancelled');
+    const sessionIdSnapshot = activeSessionIdRef.current;
 
-    const sleep = (ms: number) =>
-      new Promise<void>((resolve) => setTimeout(resolve, ms));
+    const refreshHistoryUntilSettled = async () => {
+      if (!sessionIdSnapshot || sessionIdSnapshot < 0) return;
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        if (isCancelled) return;
+        if (activeSessionIdRef.current !== sessionIdSnapshot) return;
+        const loadedMessages = await loadChatHistory(sessionIdSnapshot);
+        if (!loadedMessages) return;
+        const lastAssistant = [...loadedMessages]
+          .reverse()
+          .find((message) => message.role === 'assistant');
+        if (!lastAssistant || !isProcessingMessage(lastAssistant.content)) {
+          return;
+        }
+        await sleep(1000);
+      }
+    };
 
     const poll = async () => {
       const taskId = activeTaskIdRef.current;
@@ -434,41 +484,11 @@ export function useChat({ enabled }: { enabled: boolean }) {
         ) {
           setActiveTaskId((current) => (current === taskId ? null : current));
           setTaskStopping(false);
-          setMessages((prev) => {
-            const idx = [...prev]
-              .reverse()
-              .findIndex(
-                (m) => m.role === 'assistant' && isProcessingMessage(m.content),
-              );
-            if (idx === -1) return prev;
-            const realIdx = prev.length - 1 - idx;
 
-            const next = [...prev];
-            if (status === 'completed') {
-              next[realIdx] = {
-                ...next[realIdx],
-                content:
-                  typeof task.result === 'string' && task.result.length > 0
-                    ? task.result
-                    : 'Task completed (no result).',
-              };
-            } else if (status === 'cancelled') {
-              const isSearch =
-                next[realIdx].detectedEndpoint?.includes('/search') ?? false;
-              next[realIdx] = {
-                ...next[realIdx],
-                content: isSearch ? 'Search cancelled' : 'Analyze cancelled',
-              };
-            } else {
-              next[realIdx] = {
-                ...next[realIdx],
-                content: `Task failed: ${task.error || 'Task failed'}`,
-              };
-            }
-            return next;
-          });
-          await sleep(500);
-          await loadChatHistory();
+          // Refresh until the processing placeholder is replaced by the result.
+          console.log(`Task ${status}, refreshing history...`);
+          void refreshHistoryUntilSettled();
+          return;
         }
       } catch (error) {
         console.warn(
@@ -512,14 +532,6 @@ export function useChat({ enabled }: { enabled: boolean }) {
     if (!enabled || !taskId || taskStopping) return;
 
     setTaskStopping(true);
-
-    const processingPrefix = 'Processing your request';
-    const isProcessingMessage = (content: string | undefined) =>
-      typeof content === 'string' &&
-      (content.includes(processingPrefix) ||
-        content === 'Stopping...' ||
-        content === 'Analyze cancelled' ||
-        content === 'Search cancelled');
 
     // Optimistically reflect stopping in the UI.
     setMessages((prev) => {
@@ -595,13 +607,90 @@ export function useChat({ enabled }: { enabled: boolean }) {
           sessionId: activeSessionId,
         });
 
-        const { taskId } = normalizeChatPostResponse(response);
-        console.log('Chat response received', { taskId, response });
+        let didSwitchSession = false;
+        const {
+          taskId,
+          response: assistantResponse,
+          sessionId: serverSessionId,
+        } = normalizeChatPostResponse(response);
+        console.log('Chat response received', {
+          taskId,
+          serverSessionId,
+          response,
+        });
         if (taskId) {
           setActiveTaskId(taskId);
         }
 
-        await loadChatHistory();
+        if (
+          serverSessionId &&
+          Number.isInteger(serverSessionId) &&
+          serverSessionId > 0 &&
+          serverSessionId !== activeSessionIdRef.current
+        ) {
+          if (pendingPlaceholderIdRef.current !== null) {
+            const tempId = pendingPlaceholderIdRef.current;
+            const now = new Date().toISOString();
+            const fallbackTitle = normalizeRequestTitle(query);
+            pendingPlaceholderIdRef.current = null;
+            justReplacedPlaceholderRef.current = true;
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === tempId
+                  ? {
+                      ...session,
+                      id: serverSessionId,
+                      title: session.title ?? fallbackTitle,
+                      createdAt: session.createdAt || now,
+                      updatedAt: now,
+                    }
+                  : session,
+              ),
+            );
+          }
+
+          setActiveSessionId(serverSessionId);
+          didSwitchSession = true;
+          void loadSessions({
+            skipHistory: true,
+            activeSessionIdOverride: serverSessionId,
+          });
+        }
+
+        if (!taskId && assistantResponse) {
+          const assistantMessage: ChatMessage = {
+            id: `local-${Date.now() + 1}`,
+            role: 'assistant',
+            content: assistantResponse,
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+        }
+
+        if (taskId) {
+          if (didSwitchSession) {
+            skipNextHistoryLoadRef.current = true;
+          }
+          const processingMessageContent =
+            assistantResponse && assistantResponse.trim().length > 0
+              ? assistantResponse
+              : `${PROCESSING_PREFIX}...`;
+          const processingMessage: ChatMessage = {
+            id: `local-processing-${Date.now()}`,
+            role: 'assistant',
+            content: processingMessageContent,
+          };
+          setMessages((prev) => [...prev, processingMessage]);
+          return;
+        }
+
+        if (assistantResponse) {
+          if (didSwitchSession) {
+            skipNextHistoryLoadRef.current = true;
+          }
+          return;
+        }
+
+        await loadChatHistory(serverSessionId ?? activeSessionId ?? undefined);
       } catch (error) {
         console.error('Chat onSubmit error', error);
         const errorMessage: ChatMessage = {
@@ -616,7 +705,14 @@ export function useChat({ enabled }: { enabled: boolean }) {
         window.setTimeout(() => chatInputRef.current?.focus(), 0);
       }
     },
-    [canSend, chatInput, loadChatHistory, activeSessionId],
+    [
+      canSend,
+      chatInput,
+      loadChatHistory,
+      loadSessions,
+      activeSessionId,
+      setActiveSessionId,
+    ],
   );
 
   const createNewSession = useCallback(async () => {
@@ -671,6 +767,12 @@ export function useChat({ enabled }: { enabled: boolean }) {
         return;
       }
 
+      if (pendingPlaceholderIdRef.current !== tempId) {
+        // Placeholder was already resolved by another request (e.g. chat submit).
+        void loadSessions({ skipHistory: true });
+        return;
+      }
+
       const serverSession: ChatSession = {
         id: createdId,
         title: raw?.title ?? null,
@@ -704,14 +806,19 @@ export function useChat({ enabled }: { enabled: boolean }) {
         return next;
       });
     }
-  }, [sessions]);
+  }, [loadSessions, setActiveSessionId]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
     if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({
-        behavior: isInitialLoadRef.current ? 'auto' : 'smooth',
-      });
+      // Use a small timeout to ensure DOM has updated and layout is stable
+      const timeoutId = window.setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({
+          behavior: isInitialLoadRef.current ? 'auto' : 'smooth',
+          block: 'end',
+        });
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
   }, [messages]);
 
