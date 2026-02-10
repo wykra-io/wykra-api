@@ -2,6 +2,42 @@ type Json = Record<string, unknown>;
 
 const API_TOKEN_STORAGE_KEY = 'wykraApiToken';
 
+function extractErrorMessage(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === 'string') return payload;
+  if (typeof payload !== 'object') return null;
+
+  const message = (payload as { message?: unknown }).message;
+  if (typeof message === 'string') return message;
+  if (Array.isArray(message)) {
+    const parts = message.filter((item) => typeof item === 'string');
+    if (parts.length) return parts.join(', ');
+  }
+
+  const error = (payload as { error?: unknown }).error;
+  if (typeof error === 'string') return error;
+
+  return null;
+}
+
+async function readErrorMessage(
+  res: Response,
+  fallback: string,
+): Promise<string> {
+  const text = await res.text().catch(() => '');
+  if (!text) return fallback;
+
+  try {
+    const json = JSON.parse(text) as unknown;
+    const message = extractErrorMessage(json);
+    if (message) return message;
+  } catch {
+    // ignore JSON parse failures
+  }
+
+  return text;
+}
+
 export function getApiBaseUrl(): string {
   const url = String(import.meta.env.VITE_API_URL ?? '').trim();
   return url || 'http://localhost:3011';
@@ -38,7 +74,8 @@ export async function apiGet<T = unknown>(pathname: string): Promise<T> {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!res.ok) {
-    throw new Error(`GET ${pathname} failed (${res.status})`);
+    const fallback = `GET ${pathname} failed (${res.status})`;
+    throw new Error(await readErrorMessage(res, fallback));
   }
   return (await res.json()) as T;
 }
@@ -57,8 +94,8 @@ export async function apiPost<T = unknown>(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`POST ${pathname} failed (${res.status}): ${text}`);
+    const fallback = `POST ${pathname} failed (${res.status})`;
+    throw new Error(await readErrorMessage(res, fallback));
   }
   return (await res.json()) as T;
 }
@@ -77,8 +114,8 @@ export async function apiPatch<T = unknown>(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`PATCH ${pathname} failed (${res.status}): ${text}`);
+    const fallback = `PATCH ${pathname} failed (${res.status})`;
+    throw new Error(await readErrorMessage(res, fallback));
   }
   return (await res.json()) as T;
 }
@@ -90,8 +127,8 @@ export async function apiDelete<T = unknown>(pathname: string): Promise<T> {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`DELETE ${pathname} failed (${res.status}): ${text}`);
+    const fallback = `DELETE ${pathname} failed (${res.status})`;
+    throw new Error(await readErrorMessage(res, fallback));
   }
 
   // Some DELETE endpoints may return no content
