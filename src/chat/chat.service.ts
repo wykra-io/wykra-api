@@ -850,19 +850,43 @@ If you cannot extract a clear profile username, respond with:
    */
   public async chat(dto: ChatDTO, userId: number): Promise<ChatResponse> {
     const startTime = Date.now();
-    this.logger.log(`Chat request started: userId=${userId}, sessionId=${dto.sessionId}, query="${dto.query.substring(0, 50)}..."`);
-    
+    this.logger.log(
+      `Chat request started: userId=${userId}, sessionId=${dto.sessionId}, query="${dto.query.substring(0, 50)}..."`,
+    );
+
     try {
-      if (dto.sessionId && dto.sessionId > 0) {
-        const session = await this.chatSessionsRepo.findByUserIdAndId(userId, dto.sessionId);
+      let sessionId = dto.sessionId;
+
+      if (sessionId && sessionId > 0) {
+        const session = await this.chatSessionsRepo.findByUserIdAndId(userId, sessionId);
         if (!session) {
-          this.logger.warn(`Session ${dto.sessionId} not found for user ${userId}`);
+          this.logger.warn(`Session ${sessionId} not found for user ${userId}`);
           throw new BadRequestException(`Chat session not found`);
         }
+      } else {
+        // Create a new session automatically if none provided
+        const newSession = await this.chatSessionsRepo.create({ 
+          userId, 
+          title: dto.query.substring(0, 50) 
+        });
+        sessionId = newSession.id;
+        this.logger.log(`Created new chat session ${sessionId} for user ${userId}`);
       }
 
-      const history = await this.getHistory(userId, dto.sessionId);
-      this.logger.log(`Loaded history for userId=${userId}, sessionId=${dto.sessionId}: ${history.length} messages`);
+      const history = await this.getHistory(userId, sessionId);
+      this.logger.log(`Loaded history for userId=${userId}, sessionId=${sessionId}: ${history.length} messages`);
+
+      // 1. Save the user message immediately so the user sees it in the UI (if the UI polls or expects it)
+      // and to ensure it's recorded before we wait for the LLM.
+      const userMessagePromise = this.safeCreateMessage({
+        userId,
+        role: ChatMessageRole.User,
+        content: dto.query,
+        detectedEndpoint: null,
+        sessionId: sessionId && sessionId > 0 ? sessionId : null,
+      });
+
+      // 2. Invoke the LLM
       const { content: rawContent } = await this.invokeChatAssistant(
         dto.query,
         history,
@@ -870,24 +894,20 @@ If you cannot extract a clear profile username, respond with:
       const detectedEndpoint = this.extractDetectedEndpoint(rawContent);
       const cleanContent = this.cleanAssistantContent(rawContent);
 
-      await this.safeCreateMessage({
-        userId,
-        role: ChatMessageRole.User,
-        content: dto.query,
-        detectedEndpoint: null,
-        sessionId: dto.sessionId && dto.sessionId > 0 ? dto.sessionId : null,
-      });
+      // Wait for user message to be saved (usually very fast)
+      await userMessagePromise;
 
       if (detectedEndpoint) {
         const duration = (Date.now() - startTime) / 1000;
         this.logger.log(`Chat response generated in ${duration}s (endpoint detected: ${detectedEndpoint})`);
-        return await this.handleDetectedEndpointFlow({
+        const flowResult = await this.handleDetectedEndpointFlow({
           detectedEndpoint,
           userQuery: dto.query,
           userId,
           startTime,
-          sessionId: dto.sessionId,
+          sessionId: sessionId,
         });
+        return { ...flowResult, sessionId };
       }
 
       await this.safeCreateMessage({
@@ -895,12 +915,12 @@ If you cannot extract a clear profile username, respond with:
         role: ChatMessageRole.Assistant,
         content: cleanContent,
         detectedEndpoint: null,
-        sessionId: dto.sessionId && dto.sessionId > 0 ? dto.sessionId : null,
+        sessionId: sessionId && sessionId > 0 ? sessionId : null,
       });
 
       const duration = (Date.now() - startTime) / 1000;
       this.logger.log(`Chat response generated in ${duration}s`);
-      return { response: cleanContent };
+      return { response: cleanContent, sessionId };
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
       this.logger.error(

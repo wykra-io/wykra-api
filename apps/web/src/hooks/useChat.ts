@@ -382,7 +382,10 @@ export function useChat({ enabled }: { enabled: boolean }) {
   // Reset "initial load" when switching session so we scroll once when loading that session's history.
   useEffect(() => {
     isInitialLoadRef.current = true;
-  }, [activeSessionId]);
+    if (enabled && activeSessionId !== null) {
+      window.setTimeout(() => chatInputRef.current?.focus(), 0);
+    }
+  }, [activeSessionId, enabled]);
 
   useEffect(() => {
     if (!enabled || !activeTaskId) return;
