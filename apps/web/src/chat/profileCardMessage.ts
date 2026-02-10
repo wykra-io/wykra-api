@@ -20,10 +20,19 @@ export function parseProfileCardData(
   platform: Platform,
 ): ProfileCardData | null {
   try {
-    const cleanedContent = content
-      .replace(/\[INSTAGRAM_PROFILE_ANALYSIS\]\n?/, '')
-      .replace(/\[TIKTOK_PROFILE_ANALYSIS\]\n?/, '')
-      .trim();
+    const marker = platform === 'tiktok' ? '[TIKTOK_PROFILE_ANALYSIS]' : '[INSTAGRAM_PROFILE_ANALYSIS]';
+    let cleanedContent = content;
+    
+    // Try to find JSON block first if markers are present or if it looks like there's text around it
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleanedContent = jsonMatch[0];
+    } else {
+      cleanedContent = content
+        .replace(/\[INSTAGRAM_PROFILE_ANALYSIS\]\n?/, '')
+        .replace(/\[TIKTOK_PROFILE_ANALYSIS\]\n?/, '')
+        .trim();
+    }
 
     const parsed = JSON.parse(cleanedContent) as {
       profile: string;

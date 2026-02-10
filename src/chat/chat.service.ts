@@ -865,16 +865,20 @@ If you cannot extract a clear profile username, respond with:
         }
       } else {
         // Create a new session automatically if none provided
-        const newSession = await this.chatSessionsRepo.create({ 
-          userId, 
-          title: dto.query.substring(0, 50) 
+        const newSession = await this.chatSessionsRepo.create({
+          userId,
+          title: dto.query.substring(0, 50)
         });
         sessionId = newSession.id;
-        this.logger.log(`Created new chat session ${sessionId} for user ${userId}`);
+        this.logger.log(
+          `Created new chat session ${sessionId} for user ${userId}`,
+        );
       }
 
       const history = await this.getHistory(userId, sessionId);
-      this.logger.log(`Loaded history for userId=${userId}, sessionId=${sessionId}: ${history.length} messages`);
+      this.logger.log(
+        `Loaded history for userId=${userId}, sessionId=${sessionId}: ${history.length} messages`,
+      );
 
       // 1. Save the user message immediately so the user sees it in the UI (if the UI polls or expects it)
       // and to ensure it's recorded before we wait for the LLM.
@@ -1022,7 +1026,15 @@ If you cannot extract a clear profile username, respond with:
 
       if (this.isProfileAnalysisResult(result)) {
         const marker = this.getProfileAnalysisMarker(platform);
+        // Ensure we always return the marker and the JSON on a new line
         return `${marker}\n${JSON.stringify(result)}`;
+      }
+
+      // For search results or other types, we might want to ensure they are also 
+      // recognizable if they are just JSON.
+      const jsonResult = JSON.stringify(result);
+      if (endpoint?.includes('/search')) {
+        return jsonResult;
       }
 
       return `Task completed! Here are the results:\n\n${JSON.stringify(result, null, 2)}`;
