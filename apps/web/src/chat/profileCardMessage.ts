@@ -20,21 +20,21 @@ export function parseProfileCardData(
   platform: Platform,
 ): ProfileCardData | null {
   try {
-    const marker = platform === 'tiktok' ? '[TIKTOK_PROFILE_ANALYSIS]' : '[INSTAGRAM_PROFILE_ANALYSIS]';
-    let cleanedContent = content;
-    
-    // Try to find JSON block first if markers are present or if it looks like there's text around it
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      cleanedContent = jsonMatch[0];
-    } else {
-      cleanedContent = content
-        .replace(/\[INSTAGRAM_PROFILE_ANALYSIS\]\n?/, '')
-        .replace(/\[TIKTOK_PROFILE_ANALYSIS\]\n?/, '')
-        .trim();
+    const cleanedContent = content
+      .replace(/\[INSTAGRAM_PROFILE_ANALYSIS\]\n?/, '')
+      .replace(/\[TIKTOK_PROFILE_ANALYSIS\]\n?/, '')
+      .trim();
+
+    // If the content is still not valid JSON, try to extract it
+    let jsonToParse = cleanedContent;
+    if (!cleanedContent.startsWith('{')) {
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonToParse = jsonMatch[0];
+      }
     }
 
-    const parsed = JSON.parse(cleanedContent) as {
+    const parsed = JSON.parse(jsonToParse) as {
       profile: string;
       data: ProfileCardData['data'];
       analysis?: ProfileCardData['analysis'];
