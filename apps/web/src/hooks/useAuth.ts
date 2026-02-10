@@ -34,10 +34,8 @@ function normalizeMeResponse(payload: unknown): MeResponse | null {
     githubAvatarUrlRaw === null || typeof githubAvatarUrlRaw === 'string'
       ? githubAvatarUrlRaw
       : null;
-  const isAdmin =
-    typeof (candidate as { isAdmin?: unknown }).isAdmin === 'boolean'
-      ? (candidate as { isAdmin: boolean }).isAdmin
-      : false;
+  const isAdminRaw = (candidate as { isAdmin?: unknown }).isAdmin;
+  const isAdmin = typeof isAdminRaw === 'boolean' ? isAdminRaw : false;
 
   const email =
     'email' in candidate &&
@@ -73,6 +71,38 @@ function extractToken(payload: unknown): string | null {
   }
 
   return null;
+}
+
+type EmailRegisterResult = {
+  confirmationRequired: true;
+  message?: string;
+};
+
+function extractEmailRegisterResult(
+  payload: unknown,
+): EmailRegisterResult | null {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const candidate: unknown =
+    'data' in payload && (payload as { data?: unknown }).data
+      ? (payload as { data?: unknown }).data
+      : payload;
+
+  if (!candidate || typeof candidate !== 'object') return null;
+
+  const confirmationRequired =
+    'confirmationRequired' in candidate &&
+    (candidate as { confirmationRequired?: unknown }).confirmationRequired ===
+      true;
+  if (!confirmationRequired) return null;
+
+  const message =
+    'message' in candidate &&
+    typeof (candidate as { message?: unknown }).message === 'string'
+      ? (candidate as { message: string }).message
+      : undefined;
+
+  return { confirmationRequired: true, message };
 }
 
 export function useAuth() {
@@ -168,17 +198,30 @@ export function useAuth() {
   }, [refreshMe]);
 
   const emailSignIn = useCallback(
-    async (email: string, password: string, isRegister: boolean) => {
-      const endpoint = isRegister ? '/api/v1/auth/register' : '/api/v1/auth/login';
+    async (
+      email: string,
+      password: string,
+      isRegister: boolean,
+    ): Promise<EmailRegisterResult | void> => {
+      const endpoint = isRegister
+        ? '/api/v1/auth/register'
+        : '/api/v1/auth/login';
       const resp = await apiPost<unknown>(endpoint, { email, password });
 
       const token = extractToken(resp);
-      if (!token) {
-        throw new Error('Email auth response did not include token');
+      if (token) {
+        setApiToken(token);
+        await refreshMe();
+        return;
       }
 
-      setApiToken(token);
-      await refreshMe();
+      if (isRegister) {
+        const registerResult = extractEmailRegisterResult(resp);
+        if (registerResult) return registerResult;
+        throw new Error('Sign up response did not include confirmation status');
+      }
+
+      throw new Error('Email auth response did not include token');
     },
     [refreshMe],
   );

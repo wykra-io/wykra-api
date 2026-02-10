@@ -4,11 +4,18 @@ import {
   Inject,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { createHash, createHmac, randomBytes, scrypt as scryptCallback } from 'crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  scrypt as scryptCallback,
+} from 'crypto';
 import { promisify } from 'util';
+import { ServerClient } from 'postmark';
 
 const scrypt = promisify(scryptCallback);
 import type { Cache } from 'cache-manager';
@@ -18,12 +25,21 @@ import { Repository } from 'typeorm';
 import { parse } from 'node:querystring';
 import {
   API_AUTH_CACHE_TTL_SECONDS,
+  EMAIL_CONFIRMATION_TTL_HOURS,
   GITHUB_AUTH_CACHE_TTL_SECONDS,
 } from './constants';
 import type { GithubAuthData } from './interfaces/github-auth-data.interface';
-import type { AuthTokenResponse } from './interfaces/auth-token-response.interface';
+import type {
+  AuthTokenResponse,
+  EmailConfirmResponse,
+  EmailRegisterResponse,
+} from './interfaces/auth-token-response.interface';
 import { User } from '@libs/entities/user.entity';
-import { GithubConfigService, TelegramConfigService } from '@libs/config';
+import {
+  GithubConfigService,
+  PostmarkConfigService,
+  TelegramConfigService,
+} from '@libs/config';
 import { EmailAuthDto } from './dto';
 
 @Injectable()
@@ -34,18 +50,27 @@ export class AuthService {
     return `${salt}:${derivedKey.toString('hex')}`;
   }
 
-  private async verifyPassword(password: string, hash: string): Promise<boolean> {
+  private async verifyPassword(
+    password: string,
+    hash: string,
+  ): Promise<boolean> {
     const [salt, key] = hash.split(':');
     const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
     return derivedKey.toString('hex') === key;
   }
   private readonly logger = new Logger(AuthService.name);
+  private postmarkClient: ServerClient;
   constructor(
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
     @InjectRepository(User) private readonly usersRepo: Repository<User>,
     private readonly githubConfig: GithubConfigService,
+    private readonly postmarkConfig: PostmarkConfigService,
     private readonly telegramConfig: TelegramConfigService,
-  ) {}
+  ) {
+    if (this.postmarkConfig.isConfigured) {
+      this.postmarkClient = new ServerClient(this.postmarkConfig.serverToken!);
+    }
+  }
 
   public async githubAuthFromRequest(req: Request): Promise<GithubAuthData> {
     const auth = req.headers.authorization;
@@ -166,18 +191,130 @@ export class AuthService {
     return { token: apiToken };
   }
 
-  public async emailRegister(dto: EmailAuthDto): Promise<AuthTokenResponse> {
+  private ensurePostmarkClient(): ServerClient {
+    if (this.postmarkClient) return this.postmarkClient;
+
+    if (!this.postmarkConfig.isConfigured) {
+      this.logger.error('Postmark is not configured for email confirmation');
+      throw new ServiceUnavailableException(
+        'Email confirmation is not configured',
+      );
+    }
+
+    this.postmarkClient = new ServerClient(this.postmarkConfig.serverToken!);
+    return this.postmarkClient;
+  }
+
+  private buildEmailConfirmationUrl(token: string): string {
+    const confirmUrl = this.postmarkConfig.confirmUrl;
+    if (!confirmUrl) {
+      throw new ServiceUnavailableException(
+        'Email confirmation URL is not configured',
+      );
+    }
+
+    let url: URL;
+    try {
+      url = new URL(confirmUrl);
+    } catch {
+      throw new ServiceUnavailableException(
+        'Email confirmation URL is invalid',
+      );
+    }
+    url.searchParams.set('token', token);
+    return url.toString();
+  }
+
+  private buildEmailVerification(): {
+    token: string;
+    tokenHash: string;
+    expiresAt: Date;
+  } {
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(
+      Date.now() + EMAIL_CONFIRMATION_TTL_HOURS * 60 * 60 * 1000,
+    );
+    return { token, tokenHash, expiresAt };
+  }
+
+  private async sendEmailConfirmation(
+    email: string,
+    token: string,
+  ): Promise<void> {
+    const client = this.ensurePostmarkClient();
+    const confirmUrl = this.buildEmailConfirmationUrl(token);
+    const ttlHours = EMAIL_CONFIRMATION_TTL_HOURS;
+    const htmlBody = [
+      '<p>Welcome to Wykra!</p>',
+      '<p>Please confirm your email address by clicking the link below:</p>',
+      `<p><a href="${confirmUrl}" target="_blank" rel="noopener noreferrer">Confirm email</a></p>`,
+      `<p>This link expires in ${ttlHours} hours.</p>`,
+    ].join('\n');
+    const textBody = `Welcome to Wykra!\n\nConfirm your email address: ${confirmUrl}\n\nThis link expires in ${ttlHours} hours.`;
+
+    try {
+      await client.sendEmail({
+        From: this.postmarkConfig.fromEmail!,
+        To: email,
+        Subject: 'Confirm your Wykra account',
+        HtmlBody: htmlBody,
+        TextBody: textBody,
+        MessageStream: this.postmarkConfig.messageStream,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? (error.stack ?? error.message) : String(error);
+      this.logger.error('Postmark sendEmail failed', errorMessage);
+      throw new ServiceUnavailableException(
+        'Failed to send confirmation email',
+      );
+    }
+  }
+
+  public async emailRegister(
+    dto: EmailAuthDto,
+  ): Promise<EmailRegisterResponse> {
+    const email = String(dto.email).toLowerCase().trim();
     const existing = await this.usersRepo.findOne({
-      where: { email: dto.email.toLowerCase() },
+      where: { email },
+      select: ['id', 'email', 'emailVerifiedAt'],
     });
-    if (existing) {
+
+    if (existing?.emailVerifiedAt) {
       throw new ConflictException('User with this email already exists');
     }
 
-    const passwordHash = await this.hashPassword(dto.password);
+    const password = String(dto.password);
+    const passwordHash = await this.hashPassword(password);
+    const verification = this.buildEmailVerification();
+    const sentAt = new Date();
+
+    if (existing) {
+      await this.usersRepo.update(
+        { id: existing.id },
+        {
+          passwordHash,
+          emailVerificationTokenHash: verification.tokenHash,
+          emailVerificationSentAt: sentAt,
+          emailVerificationExpiresAt: verification.expiresAt,
+        },
+      );
+
+      await this.sendEmailConfirmation(email, String(verification.token));
+      return {
+        confirmationRequired: true,
+        message: 'Check your email to confirm your account.',
+      };
+    }
+
     const user = this.usersRepo.create({
-      email: dto.email.toLowerCase(),
+      email,
       passwordHash,
+      emailVerifiedAt: null,
+      emailVerificationTokenHash: verification.tokenHash,
+      emailVerificationSentAt: sentAt,
+      emailVerificationExpiresAt: verification.expiresAt,
       githubId: null,
       githubLogin: null,
       githubAvatarUrl: null,
@@ -192,19 +329,25 @@ export class AuthService {
     });
 
     await this.usersRepo.save(user);
-    const token = await this.rotateApiToken(user);
-    return { token };
+    await this.sendEmailConfirmation(email, String(verification.token));
+
+    return {
+      confirmationRequired: true,
+      message: 'Check your email to confirm your account.',
+    };
   }
 
   public async emailLogin(dto: EmailAuthDto): Promise<AuthTokenResponse> {
+    const email = String(dto.email).toLowerCase().trim();
     const user = await this.usersRepo.findOne({
-      where: { email: dto.email.toLowerCase() },
+      where: { email },
       select: [
         'id',
         'email',
         'passwordHash',
         'apiTokenHash',
         'apiTokenCreatedAt',
+        'emailVerifiedAt',
       ],
     });
 
@@ -212,16 +355,59 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const isPasswordValid = await this.verifyPassword(
-      dto.password,
-      user.passwordHash,
-    );
+    const password = String(dto.password);
+    const passwordHash = String(user.passwordHash);
+    const isPasswordValid = await this.verifyPassword(password, passwordHash);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    if (!user.emailVerifiedAt) {
+      throw new UnauthorizedException('Please confirm your email');
+    }
+
     const token = await this.rotateApiToken(user);
     return { token };
+  }
+
+  public async confirmEmail(token: string): Promise<EmailConfirmResponse> {
+    const rawToken = token?.trim();
+    if (!rawToken) {
+      throw new BadRequestException('Missing token');
+    }
+
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const user = await this.usersRepo.findOne({
+      where: { emailVerificationTokenHash: tokenHash },
+      select: ['id', 'emailVerifiedAt', 'emailVerificationExpiresAt'],
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid confirmation token');
+    }
+
+    if (user.emailVerifiedAt) {
+      return { confirmed: true };
+    }
+
+    if (
+      user.emailVerificationExpiresAt &&
+      user.emailVerificationExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException('Confirmation token expired');
+    }
+
+    await this.usersRepo.update(
+      { id: user.id },
+      {
+        emailVerifiedAt: new Date(),
+        emailVerificationTokenHash: null,
+        emailVerificationSentAt: null,
+        emailVerificationExpiresAt: null,
+      },
+    );
+
+    return { confirmed: true };
   }
 
   public async apiAuthFromRequest(req: Request): Promise<User> {
@@ -300,14 +486,25 @@ export class AuthService {
       .sort()
       .join('\n');
 
-    this.logger.log(`Telegram auth attempt. dataStr: ${dataStr.replace(/\n/g, ' | ')}`);
+    this.logger.log(
+      `Telegram auth attempt. dataStr: ${dataStr.replace(/\n/g, ' | ')}`,
+    );
 
     const checksum = createHmac('sha256', secretKey)
       .update(dataStr)
       .digest('hex');
 
-    if (checksum !== params.hash) {
-      this.logger.error(`Telegram auth checksum mismatch. Expected: ${params.hash}, Computed: ${checksum}`);
+    const expectedHash =
+      typeof params.hash === 'string'
+        ? params.hash
+        : Array.isArray(params.hash)
+          ? params.hash[0]
+          : '';
+
+    if (checksum !== expectedHash) {
+      this.logger.error(
+        `Telegram auth checksum mismatch. Expected: ${expectedHash}, Computed: ${checksum}`,
+      );
       this.logger.error(`Data string used for HMAC: ${dataStr}`);
       throw new UnauthorizedException('Invalid code');
     }

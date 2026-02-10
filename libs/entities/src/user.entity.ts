@@ -58,8 +58,41 @@ export class User extends Model {
   @Column({ name: 'email', type: 'text', unique: true, nullable: true })
   email!: string | null;
 
-  @Column({ name: 'password_hash', type: 'text', nullable: true, select: false })
+  @Column({
+    name: 'password_hash',
+    type: 'text',
+    nullable: true,
+    select: false,
+  })
   passwordHash!: string | null;
+
+  @Column({ name: 'email_verified_at', type: 'timestamp', nullable: true })
+  emailVerifiedAt!: Date | null;
+
+  @Index('users_email_verification_token_hash_idx', {
+    where: 'email_verification_token_hash IS NOT NULL',
+  })
+  @Column({
+    name: 'email_verification_token_hash',
+    type: 'text',
+    nullable: true,
+    select: false,
+  })
+  emailVerificationTokenHash!: string | null;
+
+  @Column({
+    name: 'email_verification_sent_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  emailVerificationSentAt!: Date | null;
+
+  @Column({
+    name: 'email_verification_expires_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  emailVerificationExpiresAt!: Date | null;
 
   @Index('users_google_id_idx')
   @Column({ name: 'google_id', type: 'text', unique: true, nullable: true })

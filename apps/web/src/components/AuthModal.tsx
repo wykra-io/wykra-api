@@ -6,7 +6,11 @@ type Props = {
   onGithubSignIn: () => void;
   onGoogleSignIn: () => void;
   onTelegramSignIn?: () => void;
-  onEmailSignIn: (email: string, password: string, isRegister: boolean) => Promise<void>;
+  onEmailSignIn: (
+    email: string,
+    password: string,
+    isRegister: boolean,
+  ) => Promise<{ confirmationRequired?: boolean; message?: string } | void>;
 };
 
 export function AuthModal({
@@ -24,12 +28,14 @@ export function AuthModal({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   if (!open) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfo(null);
 
     if (isRegister && password !== confirmPassword) {
       setError('Passwords do not match');
@@ -38,7 +44,17 @@ export function AuthModal({
 
     setLoading(true);
     onEmailSignIn(email, password, isRegister)
-      .then(() => {
+      .then((result) => {
+        if (result?.confirmationRequired) {
+          setInfo(
+            result.message || 'Check your email to confirm your account.',
+          );
+          setIsRegister(false);
+          setPassword('');
+          setConfirmPassword('');
+          return;
+        }
+
         onClose();
       })
       .catch((err) => {
@@ -220,6 +236,11 @@ export function AuthModal({
               {error}
             </div>
           )}
+          {info && (
+            <div style={{ color: '#52c41a', fontSize: 14, marginBottom: 16 }}>
+              {info}
+            </div>
+          )}
 
           <button
             type="submit"
@@ -236,6 +257,7 @@ export function AuthModal({
               onClick={() => {
                 setIsRegister(!isRegister);
                 setError(null);
+                setInfo(null);
                 setConfirmPassword('');
               }}
               style={{
