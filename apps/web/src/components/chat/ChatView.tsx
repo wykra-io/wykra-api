@@ -119,7 +119,7 @@ export function ChatView({
               type={activeTaskId ? 'button' : 'submit'}
               onPointerDown={(e) => {
                 // Use pointer down to avoid some mobile click delay/interference
-                if (activeTaskId) {
+                if (activeTaskId && !taskStopping) {
                   e.preventDefault();
                   e.stopPropagation();
                   onStopTask?.();
@@ -137,37 +137,33 @@ export function ChatView({
               disabled={
                 activeTaskId
                   ? !onStopTask || !!taskStopping
-                  : !chatInput.trim() || !canSend
+                  : !chatInput.trim() || !canSend || !!taskStopping
               }
               className={`chatSendButton ${
                 chatSending || !!taskStopping ? 'chatSendButtonLoading' : ''
-              }`}
+              } ${activeTaskId && !!taskStopping ? 'chatSendButtonStopping' : ''}`}
             >
               {activeTaskId ? (
                 <span aria-label="Stop task">
-                  {taskStopping ? (
-                    'Stopping…'
-                  ) : (
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <rect
-                        x="5"
-                        y="5"
-                        width="14"
-                        height="14"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <rect
+                      x="5"
+                      y="5"
+                      width="14"
+                      height="14"
+                      rx="1"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </span>
               ) : chatSending ? (
                 <span className="chatSendButtonDots" aria-hidden="true">
