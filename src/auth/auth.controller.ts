@@ -15,7 +15,11 @@ import type { Request, Response } from 'express';
 import { Public } from './decorators/public.decorator';
 import { SkipThrottle } from './decorators/skip-throttle.decorator';
 import { AuthService } from './auth.service';
-import type { AuthTokenResponse } from './interfaces/auth-token-response.interface';
+import type {
+  AuthTokenResponse,
+  EmailConfirmResponse,
+  EmailRegisterResponse,
+} from './interfaces/auth-token-response.interface';
 import { GITHUB_AUTH_CACHE_TTL_SECONDS } from './constants';
 import { User } from '@libs/entities/user.entity';
 import { EmailAuthDto, SocialAuthDto } from './dto';
@@ -76,8 +80,19 @@ export class AuthController {
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('register')
-  public async register(@Body() dto: EmailAuthDto): Promise<AuthTokenResponse> {
+  public async register(
+    @Body() dto: EmailAuthDto,
+  ): Promise<EmailRegisterResponse> {
     return this.authService.emailRegister(dto);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Get('confirm-email')
+  public async confirmEmail(
+    @Query('token') token: string,
+  ): Promise<EmailConfirmResponse> {
+    return this.authService.confirmEmail(token);
   }
 
   @Public()
@@ -109,7 +124,10 @@ export class AuthController {
         .join(' ') ||
       'User';
     const avatar =
-      user.githubAvatarUrl ?? user.telegramPhotoUrl ?? user.googlePicture ?? null;
+      user.githubAvatarUrl ??
+      user.telegramPhotoUrl ??
+      user.googlePicture ??
+      null;
 
     return {
       githubLogin: login,
