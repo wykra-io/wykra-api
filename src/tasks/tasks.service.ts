@@ -89,6 +89,25 @@ export class TasksService {
     // Abort in-flight work in this process (BrightData/OpenRouter).
     this.taskCancellation.abort(taskId, new Error('Task cancelled by user'));
 
+    try {
+      const chatTask = await this.tasksRepo.manager
+        .getRepository('ChatTask')
+        .findOne({ where: { taskId } });
+      if (chatTask && chatTask.chatMessageId) {
+        const isSearch =
+          typeof chatTask.endpoint === 'string' &&
+          chatTask.endpoint.includes('/search');
+        const label = isSearch ? 'Search cancelled' : 'Analyze cancelled';
+        await this.tasksRepo.manager
+          .getRepository('ChatMessage')
+          .update(chatTask.chatMessageId, { content: label });
+      }
+    } catch (error) {
+      console.warn(
+        `Failed to update chat message for cancelled task ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
     // Remove pending jobs from queues (works when jobId === taskId).
     await Promise.allSettled([
       this.queueService.tasks

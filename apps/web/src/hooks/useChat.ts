@@ -394,7 +394,10 @@ export function useChat({ enabled }: { enabled: boolean }) {
     const processingPrefix = 'Processing your request';
     const isProcessingMessage = (content: string | undefined) =>
       typeof content === 'string' &&
-      (content.includes(processingPrefix) || content === 'Stopping...');
+      (content.includes(processingPrefix) ||
+        content === 'Stopping...' ||
+        content === 'Analyze cancelled' ||
+        content === 'Search cancelled');
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -429,22 +432,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
           status === 'failed' ||
           status === 'cancelled'
         ) {
-          // If the task is already finished, stop polling and update UI.
           setActiveTaskId((current) => (current === taskId ? null : current));
           setTaskStopping(false);
-
-          for (let attempt = 0; attempt < 10; attempt++) {
-            const history = await loadChatHistory();
-            const stillProcessing =
-              history?.some(
-                (m) => m.role === 'assistant' && isProcessingMessage(m.content),
-              ) ?? false;
-            if (!stillProcessing) break;
-            await sleep(750);
-          }
-
-          // If backend polling didn't update the "Processing..." message (e.g. server restarted),
-          // fall back to updating the UI locally from the task status response.
           setMessages((prev) => {
             const idx = [...prev]
               .reverse()
@@ -478,6 +467,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
             }
             return next;
           });
+          await sleep(500);
+          await loadChatHistory();
         }
       } catch (error) {
         console.warn(
@@ -493,7 +484,6 @@ export function useChat({ enabled }: { enabled: boolean }) {
     const timeout = window.setTimeout(
       () => {
         if (isCancelled) return;
-        // TikTok tasks can take 10-20+ minutes; allow more time before giving up.
         setActiveTaskId(null);
       },
       30 * 60 * 1000,
@@ -507,8 +497,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
   }, [activeTaskId, enabled, loadChatHistory]);
 
   const canSend = useMemo(
-    () => enabled && !chatSending && !activeTaskId,
-    [enabled, chatSending, activeTaskId],
+    () => enabled && !chatSending && !activeTaskId && !taskStopping,
+    [enabled, chatSending, activeTaskId, taskStopping],
   );
 
   const onChatInputChange = useCallback(
@@ -526,7 +516,10 @@ export function useChat({ enabled }: { enabled: boolean }) {
     const processingPrefix = 'Processing your request';
     const isProcessingMessage = (content: string | undefined) =>
       typeof content === 'string' &&
-      (content.includes(processingPrefix) || content === 'Stopping...');
+      (content.includes(processingPrefix) ||
+        content === 'Stopping...' ||
+        content === 'Analyze cancelled' ||
+        content === 'Search cancelled');
 
     // Optimistically reflect stopping in the UI.
     setMessages((prev) => {
@@ -544,9 +537,10 @@ export function useChat({ enabled }: { enabled: boolean }) {
 
     try {
       await apiPost(`/api/v1/tasks/${taskId}/stop`, {});
-      // We don't need to manually update messages here because handleTaskPolling
-      // will see the 'cancelled' status and update the message content.
-      // However, we MUST reset taskStopping so the UI doesn't stay in "Stopping..." mode.
+      for (let i = 0; i < 20; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        if (!activeTaskIdRef.current) break;
+      }
     } catch (error) {
       console.warn(
         `Failed to stop task ${taskId}: ${
