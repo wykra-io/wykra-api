@@ -23,7 +23,7 @@ export class OpenrouterConfigService {
   public get model(): string {
     return this.config.get<string>(
       'openrouter.model',
-      'google/gemini-2.5-flash',
+      'google/gemini-2.0-flash-001',
     );
   }
 

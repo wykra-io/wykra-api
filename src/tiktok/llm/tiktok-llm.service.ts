@@ -58,7 +58,7 @@ export class TikTokLLMService {
 
       this.sonnetClient = new ChatOpenAI({
         ...baseConfig,
-        modelName: 'google/gemini-2.5-flash',
+        modelName: 'google/gemini-2.0-flash-001',
       });
     } else {
       this.defaultClient = null;
@@ -364,7 +364,7 @@ User query: '${query}'`;
       const llmDuration = (Date.now() - llmStartTime) / 1000;
       const responseText = response.content as string;
 
-      const model = 'google/gemini-2.5-flash';
+      const model = 'google/gemini-2.0-flash-001';
       this.metricsService.recordLLMCall(model, 'tiktok_search_context');
       this.metricsService.recordLLMCallDuration(
         model,

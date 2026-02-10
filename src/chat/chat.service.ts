@@ -58,7 +58,7 @@ export class SearchRateLimitError extends Error {
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
-  private readonly defaultModel = 'google/gemini-2.5-flash';
+  private readonly defaultModel = 'google/gemini-2.0-flash-001';
   private readonly llmClient: ChatOpenAI | null;
   private getProcessingMessageContent(endpoint: ChatEndpoint): string {
     switch (endpoint) {
