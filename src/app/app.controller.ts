@@ -45,13 +45,13 @@ export class AppController {
     }
 
     try {
-      // Decode the URL if it's encoded
-      let imageUrl: string;
-      try {
-        imageUrl = decodeURIComponent(url);
-      } catch {
-        // If decoding fails, use the original URL
-        imageUrl = url;
+      let imageUrl = url;
+      if (/^https?%3A%2F%2F/i.test(imageUrl)) {
+        try {
+          imageUrl = decodeURIComponent(imageUrl);
+        } catch {
+          imageUrl = url;
+        }
       }
 
       // Validate that it's an image URL (basic check)
