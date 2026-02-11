@@ -421,14 +421,11 @@ function formatPostDate(value: number | null | undefined): string | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  const now = new Date();
   const options: Intl.DateTimeFormatOptions = {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
   };
-  if (date.getFullYear() !== now.getFullYear()) {
-    options.year = 'numeric';
-  }
   return date.toLocaleDateString(undefined, options);
 }
 
@@ -1303,50 +1300,6 @@ export function ProfileCard({ data }: ProfileCardProps) {
           </div>
         </div>
       </div>
-      {data.analysis?.summary && (
-        <div className="profileCardAnalysis">
-          <div className="profileAnalysisSection">
-            <h4>Summary</h4>
-            <p>{data.analysis.summary}</p>
-          </div>
-          {data.analysis.topic && (
-            <div className="profileAnalysisRow">
-              <span className="profileAnalysisLabel">Topic:</span>
-              <span>{data.analysis.topic}</span>
-            </div>
-          )}
-          {data.analysis.niche && (
-            <div className="profileAnalysisRow">
-              <span className="profileAnalysisLabel">Niche:</span>
-              <span>{data.analysis.niche}</span>
-            </div>
-          )}
-          {data.analysis.qualityScore !== undefined && (
-            <div className="profileAnalysisRow">
-              <span className="profileAnalysisLabel">Quality Score:</span>
-              <span>{data.analysis.qualityScore}/5</span>
-            </div>
-          )}
-          {data.analysis.engagementStrength && (
-            <div className="profileAnalysisRow">
-              <span className="profileAnalysisLabel">Engagement:</span>
-              <span>{data.analysis.engagementStrength}</span>
-            </div>
-          )}
-          {data.analysis.contentAuthenticity && (
-            <div className="profileAnalysisRow">
-              <span className="profileAnalysisLabel">Content:</span>
-              <span>{data.analysis.contentAuthenticity}</span>
-            </div>
-          )}
-          {data.analysis.followerAuthenticity && (
-            <div className="profileAnalysisRow">
-              <span className="profileAnalysisLabel">Followers:</span>
-              <span>{data.analysis.followerAuthenticity}</span>
-            </div>
-          )}
-        </div>
-      )}
       {data.platform === 'tiktok' && latestTikTokPosts.length > 0 && (
         <div className="profileCardPosts">
           <h4>Latest posts</h4>
@@ -1549,6 +1502,64 @@ export function ProfileCard({ data }: ProfileCardProps) {
                 </a>
               );
             })}
+          </div>
+        </div>
+      )}
+      {data.analysis?.summary && (
+        <div className="profileCardAnalysis">
+          <div className="profileAnalysisSection">
+            <h4>Summary</h4>
+            <p>{data.analysis.summary}</p>
+          </div>
+          <div className="profileAnalysisCompact">
+            {data.analysis.topic && (
+              <div className="profileAnalysisBadge">
+                <span className="profileAnalysisBadgeLabel">Topic:</span>
+                <span className="profileAnalysisBadgeValue">
+                  {data.analysis.topic}
+                </span>
+              </div>
+            )}
+            {data.analysis.niche && (
+              <div className="profileAnalysisBadge">
+                <span className="profileAnalysisBadgeLabel">Niche:</span>
+                <span className="profileAnalysisBadgeValue">
+                  {data.analysis.niche}
+                </span>
+              </div>
+            )}
+            {data.analysis.qualityScore !== undefined && (
+              <div className="profileAnalysisBadge">
+                <span className="profileAnalysisBadgeLabel">Quality:</span>
+                <span className="profileAnalysisBadgeValue">
+                  {data.analysis.qualityScore}/5
+                </span>
+              </div>
+            )}
+            {data.analysis.engagementStrength && (
+              <div className="profileAnalysisBadge">
+                <span className="profileAnalysisBadgeLabel">Engagement:</span>
+                <span className="profileAnalysisBadgeValue">
+                  {data.analysis.engagementStrength}
+                </span>
+              </div>
+            )}
+            {data.analysis.contentAuthenticity && (
+              <div className="profileAnalysisBadge">
+                <span className="profileAnalysisBadgeLabel">Content:</span>
+                <span className="profileAnalysisBadgeValue">
+                  {data.analysis.contentAuthenticity}
+                </span>
+              </div>
+            )}
+            {data.analysis.followerAuthenticity && (
+              <div className="profileAnalysisBadge">
+                <span className="profileAnalysisBadgeLabel">Followers:</span>
+                <span className="profileAnalysisBadgeValue">
+                  {data.analysis.followerAuthenticity}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

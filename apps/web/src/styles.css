@@ -1009,6 +1009,34 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.profileAnalysisCompact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profileAnalysisBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.profileAnalysisBadgeLabel {
+  font-weight: 600;
+  color: #475569;
+}
+
+.profileAnalysisBadgeValue {
+  color: #0f172a;
 }
 
 .profileAnalysisSection {
@@ -1034,16 +1062,6 @@ pre {
   gap: 8px;
   font-size: 14px;
   padding: 6px 0;
-}
-
-.profileAnalysisLabel {
-  font-weight: 600;
-  color: #0f172a;
-  min-width: 120px;
-}
-
-.profileAnalysisRow > span:last-child {
-  color: #475569;
 }
 
 .profileCardPosts {
