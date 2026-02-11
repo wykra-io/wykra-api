@@ -1390,10 +1390,149 @@ export function ProfileCard({ data }: ProfileCardProps) {
                   {hasStats && (
                     <div className="profileCardPostStatsRow">
                       {dateLabel && <span>{dateLabel}</span>}
-                      {views && <span>{views} views</span>}
-                      {likes && <span>{likes} likes</span>}
-                      {comments && <span>{comments} comments</span>}
-                      {shares && <span>{shares} shares</span>}
+                      {views && (
+                        <span
+                          className="profileCardPostStat"
+                          title="Views"
+                          aria-label={`${views} views`}
+                        >
+                          <span
+                            className="profileCardPostStatIcon"
+                            aria-hidden="true"
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                                strokeLinejoin="round"
+                              />
+                              <circle
+                                cx="12"
+                                cy="12"
+                                r="3"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                              />
+                            </svg>
+                          </span>
+                          <span className="profileCardPostStatValue">
+                            {views}
+                          </span>
+                        </span>
+                      )}
+                      {likes && (
+                        <span
+                          className="profileCardPostStat"
+                          title="Likes"
+                          aria-label={`${likes} likes`}
+                        >
+                          <span
+                            className="profileCardPostStatIcon"
+                            aria-hidden="true"
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M20.8 7.6a4.8 4.8 0 0 0-6.8 0L12 9.6l-2-2a4.8 4.8 0 0 0-6.8 6.8l2 2L12 21l6.8-4.6 2-2a4.8 4.8 0 0 0 0-6.8Z"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </span>
+                          <span className="profileCardPostStatValue">
+                            {likes}
+                          </span>
+                        </span>
+                      )}
+                      {comments && (
+                        <span
+                          className="profileCardPostStat"
+                          title="Comments"
+                          aria-label={`${comments} comments`}
+                        >
+                          <span
+                            className="profileCardPostStatIcon"
+                            aria-hidden="true"
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M21 12a8 8 0 0 1-8 8H7l-4 3 1.5-4.5A8 8 0 1 1 21 12Z"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </span>
+                          <span className="profileCardPostStatValue">
+                            {comments}
+                          </span>
+                        </span>
+                      )}
+                      {shares && (
+                        <span
+                          className="profileCardPostStat"
+                          title="Shares"
+                          aria-label={`${shares} shares`}
+                        >
+                          <span
+                            className="profileCardPostStatIcon"
+                            aria-hidden="true"
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M15 5h4v4"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                              <path
+                                d="M10 14 19 5"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                              <path
+                                d="M19 14v5H5V5h5"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </span>
+                          <span className="profileCardPostStatValue">
+                            {shares}
+                          </span>
+                        </span>
+                      )}
                       {engagementRate && (
                         <span>{engagementRate} engagement</span>
                       )}
@@ -1403,7 +1542,6 @@ export function ProfileCard({ data }: ProfileCardProps) {
                     </div>
                   )}
                   <div className="profileCardPostMeta">
-                    <div className="profileCardPostCaption">{caption}</div>
                     {hashtagLabel && (
                       <div className="profileCardPostTags">{hashtagLabel}</div>
                     )}

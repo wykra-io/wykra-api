@@ -1126,6 +1126,33 @@ pre {
   padding: 6px 8px 4px;
 }
 
+.profileCardPostStat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(66, 46, 99, 0.08);
+  color: #475569;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.profileCardPostStatIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wykra-theme);
+}
+
+.profileCardPostStatIcon svg {
+  display: block;
+}
+
+.profileCardPostStatValue {
+  font-variant-numeric: tabular-nums;
+}
+
 .profileCardPostTags {
   font-size: 11px;
   color: #94a3b8;
