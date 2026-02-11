@@ -434,6 +434,20 @@ export function useChat({ enabled }: { enabled: boolean }) {
 
     let isCancelled = false;
     const sessionIdSnapshot = activeSessionIdRef.current;
+    let isSettling = false;
+    let pollInterval: number | null = null;
+    let timeout: number | null = null;
+
+    const clearTimers = () => {
+      if (pollInterval !== null) {
+        window.clearInterval(pollInterval);
+        pollInterval = null;
+      }
+      if (timeout !== null) {
+        window.clearTimeout(timeout);
+        timeout = null;
+      }
+    };
 
     const refreshHistoryUntilSettled = async () => {
       if (!sessionIdSnapshot || sessionIdSnapshot < 0) return;
@@ -442,6 +456,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
         if (activeSessionIdRef.current !== sessionIdSnapshot) return;
         const loadedMessages = await loadChatHistory(sessionIdSnapshot);
         if (!loadedMessages) return;
+        if (activeSessionIdRef.current !== sessionIdSnapshot) return;
         const lastAssistant = [...loadedMessages]
           .reverse()
           .find((message) => message.role === 'assistant');
@@ -482,12 +497,22 @@ export function useChat({ enabled }: { enabled: boolean }) {
           status === 'failed' ||
           status === 'cancelled'
         ) {
-          setActiveTaskId((current) => (current === taskId ? null : current));
+          if (isSettling) return;
+          isSettling = true;
+          clearTimers();
           setTaskStopping(false);
 
           // Refresh until the processing placeholder is replaced by the result.
           console.log(`Task ${status}, refreshing history...`);
-          void refreshHistoryUntilSettled();
+          try {
+            await refreshHistoryUntilSettled();
+          } finally {
+            if (!isCancelled) {
+              setActiveTaskId((current) =>
+                current === taskId ? null : current,
+              );
+            }
+          }
           return;
         }
       } catch (error) {
@@ -500,8 +525,8 @@ export function useChat({ enabled }: { enabled: boolean }) {
     };
 
     void poll();
-    const pollInterval = window.setInterval(() => void poll(), 3000);
-    const timeout = window.setTimeout(
+    pollInterval = window.setInterval(() => void poll(), 3000);
+    timeout = window.setTimeout(
       () => {
         if (isCancelled) return;
         setActiveTaskId(null);
@@ -511,8 +536,7 @@ export function useChat({ enabled }: { enabled: boolean }) {
 
     return () => {
       isCancelled = true;
-      window.clearInterval(pollInterval);
-      window.clearTimeout(timeout);
+      clearTimers();
     };
   }, [activeTaskId, enabled, loadChatHistory]);
 
