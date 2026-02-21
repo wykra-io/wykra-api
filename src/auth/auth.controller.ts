@@ -26,6 +26,8 @@ import { EmailAuthDto, SocialAuthDto } from './dto';
 
 const GITHUB_APP_STATE_COOKIE = 'wykra_gh_state';
 const GITHUB_APP_RETURNTO_COOKIE = 'wykra_gh_returnTo';
+const DEFAULT_WEB_APP_URL = 'https://app.wykra.io';
+const LOCAL_WEB_APP_URL = 'http://localhost:5173';
 
 function parseCookies(
   cookieHeader: string | undefined,
@@ -39,6 +41,61 @@ function parseCookies(
     out[key] = rest.join('=').trim();
   }
   return out;
+}
+
+function getHeaderValue(
+  header: string | string[] | undefined,
+): string | undefined {
+  if (!header) return undefined;
+  if (Array.isArray(header)) return header[0];
+  return header;
+}
+
+function resolveScheme(req: Request, host: string | undefined): string {
+  const forwardedProto = getHeaderValue(req.headers['x-forwarded-proto']);
+  if (forwardedProto) return forwardedProto.split(',')[0].trim();
+  if (host?.startsWith('localhost') || host?.startsWith('127.0.0.1')) {
+    return 'http';
+  }
+  return 'https';
+}
+
+function resolveWebAppBaseUrl(req: Request): string {
+  const envUrl =
+    process.env.WEB_APP_URL ||
+    process.env.APP_WEB_URL ||
+    process.env.CLIENT_URL ||
+    process.env.FRONTEND_URL;
+  if (envUrl) return envUrl;
+
+  const forwardedHost = getHeaderValue(req.headers['x-forwarded-host']);
+  const host = forwardedHost ?? getHeaderValue(req.headers.host);
+  if (!host) return DEFAULT_WEB_APP_URL;
+
+  if (host.startsWith('localhost') || host.startsWith('127.0.0.1')) {
+    return LOCAL_WEB_APP_URL;
+  }
+
+  const scheme = resolveScheme(req, host);
+  if (host.startsWith('api.')) {
+    return `${scheme}://${host.replace(/^api\./, 'app.')}`;
+  }
+
+  return `${scheme}://${host}`;
+}
+
+function shouldRedirectToWebApp(req: Request): boolean {
+  const accept = getHeaderValue(req.headers.accept) ?? '';
+  if (accept.includes('text/html')) return true;
+  const fetchMode = getHeaderValue(req.headers['sec-fetch-mode']);
+  return fetchMode === 'navigate';
+}
+
+function buildConfirmRedirectUrl(req: Request, token: string): string {
+  const baseUrl = resolveWebAppBaseUrl(req);
+  const url = new URL(baseUrl);
+  url.searchParams.set('token', token);
+  return url.toString();
 }
 
 @Controller('auth')
@@ -90,9 +147,16 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Get('confirm-email')
   public async confirmEmail(
+    @Req() req: Request,
     @Query('token') token: string,
-  ): Promise<EmailConfirmResponse> {
-    return this.authService.confirmEmail(token);
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<EmailConfirmResponse | void> {
+    const rawToken = typeof token === 'string' ? token.trim() : '';
+    if (rawToken && shouldRedirectToWebApp(req)) {
+      res.redirect(302, buildConfirmRedirectUrl(req, rawToken));
+      return;
+    }
+    return this.authService.confirmEmail(rawToken);
   }
 
   @Public()

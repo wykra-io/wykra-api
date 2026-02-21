@@ -1009,6 +1009,34 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.profileAnalysisCompact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profileAnalysisBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.profileAnalysisBadgeLabel {
+  font-weight: 600;
+  color: #475569;
+}
+
+.profileAnalysisBadgeValue {
+  color: #0f172a;
 }
 
 .profileAnalysisSection {
@@ -1036,14 +1064,122 @@ pre {
   padding: 6px 0;
 }
 
-.profileAnalysisLabel {
-  font-weight: 600;
-  color: #0f172a;
-  min-width: 120px;
+.profileCardPosts {
+  margin-top: 12px;
 }
 
-.profileAnalysisRow > span:last-child {
+.profileCardPosts h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 8px 0;
+}
+
+.profileCardPostsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.profileCardPost {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fafc;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.profileCardPost:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.08);
+}
+
+.profileCardPostImage {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  display: block;
+  background: #e2e8f0;
+}
+
+.profileCardPostPlaceholder {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e2e8f0;
+  color: #94a3b8;
+}
+
+.profileCardPostMeta {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profileCardPostCaption {
+  font-size: 11px;
+  color: #0f172a;
+  line-height: 1.4;
+  display: -webkit-box;
+  line-clamp: 1;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 16px;
+}
+
+.profileCardPostStatsRow {
+  font-size: 11px;
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px 4px;
+}
+
+.profileCardPostStat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(66, 46, 99, 0.08);
   color: #475569;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.profileCardPostStatIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wykra-theme);
+}
+
+.profileCardPostStatIcon svg {
+  display: block;
+}
+
+.profileCardPostStatValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.profileCardPostTags {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .chatInputForm {
