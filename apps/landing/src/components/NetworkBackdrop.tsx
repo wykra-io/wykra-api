@@ -1,3 +1,5 @@
+import React from 'react';
+
 export function NetworkBackdrop() {
   return (
     <div className="bgNetwork" aria-hidden="true">
@@ -55,5 +57,3 @@ export function NetworkBackdrop() {
     </div>
   );
 }
-
-

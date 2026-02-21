@@ -43,7 +43,7 @@ type ProfileCardProps = {
   data: ProfileCardData;
 };
 
-type TikTokPostPreview = {
+type PostPreview = {
   url: string;
   caption: string | null;
   imageUrl: string | null;
@@ -280,6 +280,7 @@ function pickArray(
         'posts',
         'aweme_list',
         'awemeList',
+        'edges',
       ]);
       if (nested) return nested;
     }
@@ -399,6 +400,21 @@ function normalizeTikTokHandle(value: string): string | null {
   const urlMatch = withoutAt.match(/tiktok\.com\/@([^/?#]+)/i);
   if (urlMatch) return urlMatch[1];
   return withoutAt;
+}
+
+function normalizeInstagramShortcode(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const urlMatch = trimmed.match(/instagram\.com\/(?:p|reel|tv)\/([^/?#]+)/i);
+  if (urlMatch) return urlMatch[1];
+  return trimmed;
+}
+
+function buildInstagramPostUrl(shortcode: string | null): string | null {
+  if (!shortcode) return null;
+  const cleanCode = normalizeInstagramShortcode(shortcode);
+  if (!cleanCode) return null;
+  return `https://www.instagram.com/p/${cleanCode}/`;
 }
 
 function buildProxyImageUrl(url: string | null | undefined): string | null {
@@ -606,7 +622,7 @@ function mergePostSources(
   return [...buckets.values(), ...unkeyed];
 }
 
-function extractTikTokPosts(profile: ProfileCardData): TikTokPostPreview[] {
+function extractTikTokPosts(profile: ProfileCardData): PostPreview[] {
   if (profile.platform !== 'tiktok') return [];
 
   const rawProfile = profile.data as Record<string, unknown>;
@@ -853,7 +869,7 @@ function extractTikTokPosts(profile: ProfileCardData): TikTokPostPreview[] {
       )
     : postsWithTimestamps;
 
-  const posts: TikTokPostPreview[] = [];
+  const posts: PostPreview[] = [];
   const seen = new Set<string>();
 
   for (const { item, timestamp } of sortedPosts) {
@@ -1059,7 +1075,384 @@ function extractTikTokPosts(profile: ProfileCardData): TikTokPostPreview[] {
   return posts;
 }
 
-function TikTokPostThumbnail({
+function extractInstagramPosts(profile: ProfileCardData): PostPreview[] {
+  if (profile.platform !== 'instagram') return [];
+
+  const rawProfile = profile.data as Record<string, unknown>;
+  const urlKeys = [
+    'url',
+    'permalink',
+    'permalink_url',
+    'permalinkUrl',
+    'post_url',
+    'postUrl',
+    'link',
+    'web_url',
+    'webUrl',
+    'shortcode_url',
+    'shortcodeUrl',
+  ];
+  const shortcodeKeys = ['shortcode', 'short_code', 'shortCode', 'code'];
+  const captionKeys = [
+    'caption',
+    'caption_text',
+    'captionText',
+    'description',
+    'desc',
+    'text',
+    'title',
+    'message',
+    'body',
+    'full_text',
+    'fullText',
+    'accessibility_caption',
+    'accessibilityCaption',
+    'alt',
+    'alt_text',
+    'altText',
+  ];
+  const imageKeys = [
+    'image_url',
+    'imageUrl',
+    'display_url',
+    'displayUrl',
+    'media_url',
+    'mediaUrl',
+    'thumbnail_url',
+    'thumbnailUrl',
+    'thumbnail_src',
+    'thumbnailSrc',
+    'thumbnail',
+    'cover',
+    'cover_url',
+    'coverUrl',
+    'preview_image',
+    'previewImage',
+    'preview_image_url',
+    'previewImageUrl',
+    'display_resources',
+    'displayResources',
+    'thumbnail_resources',
+    'thumbnailResources',
+    'photo_url',
+    'photoUrl',
+  ];
+  const idKeys = [
+    ...shortcodeKeys,
+    'id',
+    'pk',
+    'media_id',
+    'mediaId',
+    'post_id',
+    'postId',
+  ];
+  const viewKeys = [
+    'views',
+    'view_count',
+    'viewCount',
+    'play_count',
+    'playCount',
+    'video_view_count',
+    'videoViewCount',
+    'video_play_count',
+    'videoPlayCount',
+    'impressions',
+    'reach',
+  ];
+  const likeKeys = [
+    'likes',
+    'likes_count',
+    'likesCount',
+    'like_count',
+    'likeCount',
+    'favorites',
+    'favourites',
+    'favorite_count',
+    'favoriteCount',
+  ];
+  const commentKeys = [
+    'comments',
+    'comments_count',
+    'commentsCount',
+    'comment_count',
+    'commentCount',
+    'commentcount',
+  ];
+  const shareKeys = [
+    'shares',
+    'shares_count',
+    'sharesCount',
+    'share_count',
+    'shareCount',
+    'reshare_count',
+    'reshareCount',
+    'repost_count',
+    'repostCount',
+  ];
+  const engagementKeys = [
+    'engagement_rate',
+    'engagementRate',
+    'engagement_rate_estimated',
+    'engagementRateEstimated',
+  ];
+  const followerKeys = [
+    'follower_count_at_post_time',
+    'followerCountAtPostTime',
+    'followers_count',
+    'followersCount',
+    'follower_count',
+    'followerCount',
+    'followers',
+    'account_followers',
+    'accountFollowers',
+  ];
+
+  const rawPostSources: Array<unknown[] | null> = [
+    Array.isArray(rawProfile.posts) ? rawProfile.posts : null,
+    Array.isArray(rawProfile.latest_posts) ? rawProfile.latest_posts : null,
+    Array.isArray(rawProfile.recent_posts) ? rawProfile.recent_posts : null,
+    Array.isArray(rawProfile.top_posts) ? rawProfile.top_posts : null,
+    Array.isArray(rawProfile.top_posts_data) ? rawProfile.top_posts_data : null,
+    Array.isArray(rawProfile.media) ? rawProfile.media : null,
+    Array.isArray(rawProfile.items) ? rawProfile.items : null,
+    Array.isArray(rawProfile.feed) ? rawProfile.feed : null,
+    pickArray(rawProfile, [
+      'posts',
+      'latest_posts',
+      'recent_posts',
+      'top_posts',
+      'top_posts_data',
+      'media',
+      'items',
+      'feed',
+      'edge_owner_to_timeline_media',
+      'edge_media_to_caption',
+      'edges',
+    ]),
+  ];
+
+  const rawPosts = mergePostSources(rawPostSources, urlKeys, idKeys);
+
+  if (rawPosts.length === 0) return [];
+
+  const postsWithTimestamps = rawPosts
+    .map((item) => {
+      if (!isRecord(item)) {
+        return { item, timestamp: null };
+      }
+      const postRecord =
+        pickRecord(item, [
+          'post',
+          'media',
+          'node',
+          'data',
+          'post_data',
+          'postData',
+        ]) || item;
+      return {
+        item,
+        timestamp:
+          pickTimestamp(postRecord) ??
+          pickTimestamp(item) ??
+          deepPickTimestamp(item),
+      };
+    })
+    .filter((entry) => entry.item);
+
+  const hasTimestamp = postsWithTimestamps.some(
+    (entry) => typeof entry.timestamp === 'number',
+  );
+
+  const sortedPosts = hasTimestamp
+    ? [...postsWithTimestamps].sort(
+        (a, b) => (b.timestamp || 0) - (a.timestamp || 0),
+      )
+    : postsWithTimestamps;
+
+  const posts: PostPreview[] = [];
+  const seen = new Set<string>();
+
+  for (const { item, timestamp } of sortedPosts) {
+    if (!isRecord(item)) continue;
+
+    const postRecord =
+      pickRecord(item, [
+        'post',
+        'media',
+        'node',
+        'data',
+        'post_data',
+        'postData',
+      ]) || item;
+    const mediaRecord =
+      pickRecord(item, ['media', 'media_info', 'mediaInfo', 'node']) ||
+      pickRecord(postRecord, ['media', 'media_info', 'mediaInfo', 'node']);
+    const engagementRecord =
+      pickRecord(item, ['engagement', 'engagement_info', 'engagementInfo']) ||
+      pickRecord(postRecord, [
+        'engagement',
+        'engagement_info',
+        'engagementInfo',
+      ]);
+    const metricsRecord =
+      pickRecord(item, [
+        'metrics',
+        'metrics_info',
+        'metricsInfo',
+        'insights',
+      ]) ||
+      pickRecord(postRecord, [
+        'metrics',
+        'metrics_info',
+        'metricsInfo',
+        'insights',
+      ]);
+    const statsRecord =
+      pickRecord(item, ['stats', 'statistics', 'insights']) ||
+      pickRecord(postRecord, ['stats', 'statistics', 'insights']);
+    const shareRecord =
+      pickRecord(item, ['share_info', 'shareInfo']) ||
+      pickRecord(postRecord, ['share_info', 'shareInfo']);
+    const accountRecord =
+      pickRecord(item, [
+        'account',
+        'author',
+        'user',
+        'owner',
+        'profile',
+        'creator',
+      ]) ||
+      pickRecord(postRecord, [
+        'account',
+        'author',
+        'user',
+        'owner',
+        'profile',
+        'creator',
+      ]);
+
+    const postUrl =
+      pickString(item, urlKeys) ||
+      pickString(postRecord, urlKeys) ||
+      pickString(mediaRecord, urlKeys) ||
+      pickString(shareRecord, urlKeys) ||
+      null;
+    const shortcode =
+      pickString(item, shortcodeKeys) ||
+      pickString(postRecord, shortcodeKeys) ||
+      pickString(mediaRecord, shortcodeKeys);
+    const url = postUrl || buildInstagramPostUrl(shortcode);
+
+    if (!url) continue;
+
+    const imageUrl =
+      pickImageUrl(item, imageKeys) ||
+      pickImageUrl(postRecord, imageKeys) ||
+      pickImageUrl(mediaRecord, imageKeys);
+
+    const caption =
+      pickText(item, captionKeys) ||
+      pickText(postRecord, captionKeys) ||
+      pickText(mediaRecord, captionKeys) ||
+      deepPickText(item, captionKeys) ||
+      null;
+
+    const views =
+      pickNumber(item, viewKeys) ||
+      pickNumber(postRecord, viewKeys) ||
+      pickNumber(statsRecord, viewKeys) ||
+      deepPickNumber(item, viewKeys);
+
+    const likes =
+      pickNumber(engagementRecord, likeKeys) ||
+      pickNumber(item, likeKeys) ||
+      pickNumber(postRecord, likeKeys) ||
+      pickNumber(statsRecord, likeKeys) ||
+      deepPickNumber(item, likeKeys);
+
+    const comments =
+      pickNumber(engagementRecord, commentKeys) ||
+      pickNumber(item, commentKeys) ||
+      pickNumber(postRecord, commentKeys) ||
+      pickNumber(statsRecord, commentKeys) ||
+      deepPickNumber(item, commentKeys);
+
+    const shares =
+      pickNumber(engagementRecord, shareKeys) ||
+      pickNumber(item, shareKeys) ||
+      pickNumber(postRecord, shareKeys) ||
+      pickNumber(statsRecord, shareKeys) ||
+      deepPickNumber(item, shareKeys);
+
+    const engagementRate =
+      pickNumber(engagementRecord, engagementKeys) ||
+      pickNumber(item, engagementKeys) ||
+      pickNumber(postRecord, engagementKeys) ||
+      deepPickNumber(item, engagementKeys);
+
+    const followerCountAtPostTime =
+      pickNumber(metricsRecord, followerKeys) ||
+      pickNumber(item, followerKeys) ||
+      pickNumber(postRecord, followerKeys) ||
+      pickNumber(accountRecord, followerKeys) ||
+      deepPickNumber(item, followerKeys);
+
+    const hashtagSources = [
+      item.hashtags,
+      postRecord.hashtags,
+      item.tag_list,
+      item.tagList,
+      postRecord.tag_list,
+      postRecord.tagList,
+      item.tags,
+      postRecord.tags,
+      item.hashtag_list,
+      item.hashtagList,
+      postRecord.hashtag_list,
+      postRecord.hashtagList,
+    ];
+    let hashtags = hashtagSources.flatMap((source) =>
+      normalizeHashtags(source),
+    );
+    if (hashtags.length === 0) {
+      hashtags = deepPickHashtags(item);
+    }
+    if (hashtags.length === 0 && caption) {
+      hashtags = extractHashtagsFromText(caption);
+    }
+    hashtags = Array.from(new Set(hashtags));
+
+    const dedupeKey =
+      url ||
+      shortcode ||
+      pickString(item, idKeys) ||
+      pickString(postRecord, idKeys) ||
+      `${caption || ''}-${imageUrl || ''}`;
+
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    posts.push({
+      url,
+      caption,
+      imageUrl,
+      timestamp: typeof timestamp === 'number' ? timestamp : null,
+      engagementRate,
+      followerCountAtPostTime,
+      hashtags,
+      views,
+      likes,
+      comments,
+      shares,
+    });
+
+    if (posts.length >= 5) break;
+  }
+
+  return posts;
+}
+
+function PostThumbnail({
   imageUrl,
   caption,
 }: {
@@ -1067,12 +1460,23 @@ function TikTokPostThumbnail({
   caption: string;
 }) {
   const [error, setError] = useState(false);
+  const [useOriginal, setUseOriginal] = useState(false);
   const proxiedImageUrl = useMemo(
     () => buildProxyImageUrl(imageUrl),
     [imageUrl],
   );
 
-  if (!proxiedImageUrl || error) {
+  useEffect(() => {
+    setError(false);
+    setUseOriginal(false);
+  }, [imageUrl, proxiedImageUrl]);
+
+  const preferredUrl = proxiedImageUrl ?? imageUrl ?? null;
+  const activeUrl = useOriginal
+    ? (imageUrl ?? proxiedImageUrl ?? null)
+    : preferredUrl;
+
+  if (!activeUrl || error) {
     return (
       <div className="profileCardPostPlaceholder" aria-label={caption}>
         <svg
@@ -1102,11 +1506,220 @@ function TikTokPostThumbnail({
 
   return (
     <img
-      src={proxiedImageUrl}
+      src={activeUrl}
       alt={caption}
       className="profileCardPostImage"
-      onError={() => setError(true)}
+      onError={() => {
+        if (!useOriginal && proxiedImageUrl && imageUrl) {
+          setUseOriginal(true);
+          return;
+        }
+        setError(true);
+      }}
     />
+  );
+}
+
+function LatestPosts({
+  posts,
+  fallbackCaption,
+}: {
+  posts: PostPreview[];
+  fallbackCaption: string;
+}) {
+  return (
+    <div className="profileCardPosts">
+      <h4>Latest posts</h4>
+      <div className="profileCardPostsGrid">
+        {posts.map((post) => {
+          const caption = post.caption?.trim() || fallbackCaption;
+          const dateLabel = formatPostDate(post.timestamp);
+          const views = formatCount(post.views);
+          const likes = formatCount(post.likes);
+          const comments = formatCount(post.comments);
+          const shares = formatCount(post.shares);
+          const engagementRate = formatEngagementRate(post.engagementRate);
+          const followersAtPost = formatCount(post.followerCountAtPostTime);
+          const hashtagLabel =
+            post.hashtags.length > 0
+              ? post.hashtags
+                  .map((tag) => (tag.startsWith('#') ? tag : `#${tag}`))
+                  .join(' ')
+              : null;
+          const hasStats =
+            dateLabel ||
+            views ||
+            likes ||
+            comments ||
+            shares ||
+            engagementRate ||
+            followersAtPost;
+
+          return (
+            <a
+              key={post.url}
+              href={post.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="profileCardPost"
+            >
+              <PostThumbnail imageUrl={post.imageUrl} caption={caption} />
+              {hasStats && (
+                <div className="profileCardPostStatsRow">
+                  {dateLabel && <span>{dateLabel}</span>}
+                  {views && (
+                    <span
+                      className="profileCardPostStat"
+                      title="Views"
+                      aria-label={`${views} views`}
+                    >
+                      <span
+                        className="profileCardPostStatIcon"
+                        aria-hidden="true"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinejoin="round"
+                          />
+                          <circle
+                            cx="12"
+                            cy="12"
+                            r="3"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                          />
+                        </svg>
+                      </span>
+                      <span className="profileCardPostStatValue">{views}</span>
+                    </span>
+                  )}
+                  {likes && (
+                    <span
+                      className="profileCardPostStat"
+                      title="Likes"
+                      aria-label={`${likes} likes`}
+                    >
+                      <span
+                        className="profileCardPostStatIcon"
+                        aria-hidden="true"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M20.8 7.6a4.8 4.8 0 0 0-6.8 0L12 9.6l-2-2a4.8 4.8 0 0 0-6.8 6.8l2 2L12 21l6.8-4.6 2-2a4.8 4.8 0 0 0 0-6.8Z"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                      <span className="profileCardPostStatValue">{likes}</span>
+                    </span>
+                  )}
+                  {comments && (
+                    <span
+                      className="profileCardPostStat"
+                      title="Comments"
+                      aria-label={`${comments} comments`}
+                    >
+                      <span
+                        className="profileCardPostStatIcon"
+                        aria-hidden="true"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M21 12a8 8 0 0 1-8 8H7l-4 3 1.5-4.5A8 8 0 1 1 21 12Z"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                      <span className="profileCardPostStatValue">
+                        {comments}
+                      </span>
+                    </span>
+                  )}
+                  {shares && (
+                    <span
+                      className="profileCardPostStat"
+                      title="Shares"
+                      aria-label={`${shares} shares`}
+                    >
+                      <span
+                        className="profileCardPostStatIcon"
+                        aria-hidden="true"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M15 5h4v4"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M10 14 19 5"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M19 14v5H5V5h5"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                      <span className="profileCardPostStatValue">{shares}</span>
+                    </span>
+                  )}
+                  {engagementRate && <span>{engagementRate} engagement</span>}
+                  {followersAtPost && (
+                    <span>{followersAtPost} followers at post</span>
+                  )}
+                </div>
+              )}
+              <div className="profileCardPostMeta">
+                {hashtagLabel && (
+                  <div className="profileCardPostTags">{hashtagLabel}</div>
+                )}
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -1151,11 +1764,13 @@ export function ProfileCard({ data }: ProfileCardProps) {
 
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [useOriginalImage, setUseOriginalImage] = useState(false);
 
   // Reset states when image URL changes
   useEffect(() => {
     setImageError(false);
     setImageLoaded(false);
+    setUseOriginalImage(false);
   }, [profileImage]);
 
   // Create proxied image URL to bypass CORS
@@ -1163,6 +1778,9 @@ export function ProfileCard({ data }: ProfileCardProps) {
     () => buildProxyImageUrl(profileImage),
     [profileImage],
   );
+  const imageSrc = useOriginalImage
+    ? (profileImage ?? null)
+    : (proxiedImageUrl ?? profileImage ?? null);
 
   // Construct profile URL based on platform
   const profileUrl = useMemo(() => {
@@ -1173,6 +1791,16 @@ export function ProfileCard({ data }: ProfileCardProps) {
 
   const platformClass = `profileCard-${data.platform}`;
   const latestTikTokPosts = useMemo(() => extractTikTokPosts(data), [data]);
+  const latestInstagramPosts = useMemo(
+    () => extractInstagramPosts(data),
+    [data],
+  );
+  const latestPostsConfig =
+    data.platform === 'tiktok'
+      ? { posts: latestTikTokPosts, fallbackCaption: 'View on TikTok' }
+      : data.platform === 'instagram'
+        ? { posts: latestInstagramPosts, fallbackCaption: 'View on Instagram' }
+        : null;
 
   return (
     <div className={`profileCard ${platformClass}`}>
@@ -1202,9 +1830,9 @@ export function ProfileCard({ data }: ProfileCardProps) {
                 </svg>
               </div>
             )}
-            {proxiedImageUrl && (
+            {imageSrc && (
               <img
-                src={proxiedImageUrl}
+                src={imageSrc}
                 alt={profileName}
                 className="profileCardImage"
                 onLoad={() => {
@@ -1212,6 +1840,12 @@ export function ProfileCard({ data }: ProfileCardProps) {
                   setImageError(false);
                 }}
                 onError={() => {
+                  if (!useOriginalImage && proxiedImageUrl && profileImage) {
+                    setUseOriginalImage(true);
+                    setImageLoaded(false);
+                    setImageError(false);
+                    return;
+                  }
                   // Only set error after onLoad hasn't fired
                   if (!imageLoaded) {
                     setImageError(true);
@@ -1300,210 +1934,11 @@ export function ProfileCard({ data }: ProfileCardProps) {
           </div>
         </div>
       </div>
-      {data.platform === 'tiktok' && latestTikTokPosts.length > 0 && (
-        <div className="profileCardPosts">
-          <h4>Latest posts</h4>
-          <div className="profileCardPostsGrid">
-            {latestTikTokPosts.map((post) => {
-              const caption = post.caption?.trim() || 'View on TikTok';
-              const dateLabel = formatPostDate(post.timestamp);
-              const views = formatCount(post.views);
-              const likes = formatCount(post.likes);
-              const comments = formatCount(post.comments);
-              const shares = formatCount(post.shares);
-              const engagementRate = formatEngagementRate(post.engagementRate);
-              const followersAtPost = formatCount(post.followerCountAtPostTime);
-              const hashtagLabel =
-                post.hashtags.length > 0
-                  ? post.hashtags
-                      .map((tag) => (tag.startsWith('#') ? tag : `#${tag}`))
-                      .join(' ')
-                  : null;
-              const hasStats =
-                dateLabel ||
-                views ||
-                likes ||
-                comments ||
-                shares ||
-                engagementRate ||
-                followersAtPost;
-
-              return (
-                <a
-                  key={post.url}
-                  href={post.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="profileCardPost"
-                >
-                  <TikTokPostThumbnail
-                    imageUrl={post.imageUrl}
-                    caption={caption}
-                  />
-                  {hasStats && (
-                    <div className="profileCardPostStatsRow">
-                      {dateLabel && <span>{dateLabel}</span>}
-                      {views && (
-                        <span
-                          className="profileCardPostStat"
-                          title="Views"
-                          aria-label={`${views} views`}
-                        >
-                          <span
-                            className="profileCardPostStatIcon"
-                            aria-hidden="true"
-                          >
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinejoin="round"
-                              />
-                              <circle
-                                cx="12"
-                                cy="12"
-                                r="3"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                              />
-                            </svg>
-                          </span>
-                          <span className="profileCardPostStatValue">
-                            {views}
-                          </span>
-                        </span>
-                      )}
-                      {likes && (
-                        <span
-                          className="profileCardPostStat"
-                          title="Likes"
-                          aria-label={`${likes} likes`}
-                        >
-                          <span
-                            className="profileCardPostStatIcon"
-                            aria-hidden="true"
-                          >
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M20.8 7.6a4.8 4.8 0 0 0-6.8 0L12 9.6l-2-2a4.8 4.8 0 0 0-6.8 6.8l2 2L12 21l6.8-4.6 2-2a4.8 4.8 0 0 0 0-6.8Z"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          </span>
-                          <span className="profileCardPostStatValue">
-                            {likes}
-                          </span>
-                        </span>
-                      )}
-                      {comments && (
-                        <span
-                          className="profileCardPostStat"
-                          title="Comments"
-                          aria-label={`${comments} comments`}
-                        >
-                          <span
-                            className="profileCardPostStatIcon"
-                            aria-hidden="true"
-                          >
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M21 12a8 8 0 0 1-8 8H7l-4 3 1.5-4.5A8 8 0 1 1 21 12Z"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          </span>
-                          <span className="profileCardPostStatValue">
-                            {comments}
-                          </span>
-                        </span>
-                      )}
-                      {shares && (
-                        <span
-                          className="profileCardPostStat"
-                          title="Shares"
-                          aria-label={`${shares} shares`}
-                        >
-                          <span
-                            className="profileCardPostStatIcon"
-                            aria-hidden="true"
-                          >
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M15 5h4v4"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                              <path
-                                d="M10 14 19 5"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                              <path
-                                d="M19 14v5H5V5h5"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          </span>
-                          <span className="profileCardPostStatValue">
-                            {shares}
-                          </span>
-                        </span>
-                      )}
-                      {engagementRate && (
-                        <span>{engagementRate} engagement</span>
-                      )}
-                      {followersAtPost && (
-                        <span>{followersAtPost} followers at post</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="profileCardPostMeta">
-                    {hashtagLabel && (
-                      <div className="profileCardPostTags">{hashtagLabel}</div>
-                    )}
-                  </div>
-                </a>
-              );
-            })}
-          </div>
-        </div>
+      {latestPostsConfig && latestPostsConfig.posts.length > 0 && (
+        <LatestPosts
+          posts={latestPostsConfig.posts}
+          fallbackCaption={latestPostsConfig.fallbackCaption}
+        />
       )}
       {data.analysis?.summary && (
         <div className="profileCardAnalysis">

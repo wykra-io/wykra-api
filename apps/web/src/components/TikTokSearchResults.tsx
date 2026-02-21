@@ -1,15 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getApiBaseUrl } from '../api';
 
 function ProfileAvatar({
   proxiedUrl,
+  originalUrl,
   username,
 }: {
   proxiedUrl: string | null;
+  originalUrl: string | null;
   username: string;
 }) {
   const [error, setError] = useState(false);
-  if (!proxiedUrl) return null;
+  const [useOriginal, setUseOriginal] = useState(false);
+
+  useEffect(() => {
+    setError(false);
+    setUseOriginal(false);
+  }, [proxiedUrl, originalUrl]);
+
+  const preferredUrl = proxiedUrl ?? originalUrl ?? null;
+  const activeUrl = useOriginal ? originalUrl ?? proxiedUrl ?? null : preferredUrl;
+
+  if (!activeUrl) return null;
   if (error) {
     return (
       <div
@@ -35,9 +47,15 @@ function ProfileAvatar({
   }
   return (
     <img
-      src={proxiedUrl}
+      src={activeUrl}
       alt={username}
-      onError={() => setError(true)}
+      onError={() => {
+        if (!useOriginal && proxiedUrl && originalUrl) {
+          setUseOriginal(true);
+          return;
+        }
+        setError(true);
+      }}
       style={{
         width: 32,
         height: 32,
@@ -150,6 +168,7 @@ export function TikTokSearchResults({ data }: Props) {
                   <div className="tiktokSearchProfileInfo">
                     <ProfileAvatar
                       proxiedUrl={proxiedImageUrl}
+                      originalUrl={profile.profileImageUrl ?? null}
                       username={username}
                     />
 

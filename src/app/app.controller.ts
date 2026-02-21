@@ -37,11 +37,34 @@ export class AppController {
     @Query('url') url: string,
     @Res() res: Response,
   ): Promise<void> {
+    const sendImageResponse = (
+      buffer: Buffer,
+      contentType: string,
+      {
+        status = HttpStatus.OK,
+        cacheSeconds = DEFAULT_IMAGE_CACHE_SECONDS,
+      }: { status?: number; cacheSeconds?: number } = {},
+    ) => {
+      res.status(status);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', `public, max-age=${cacheSeconds}`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Content-Length', buffer.length.toString());
+      res.send(buffer);
+    };
+
+    const sendFallbackImage = (status = HttpStatus.BAD_GATEWAY) => {
+      sendImageResponse(FALLBACK_IMAGE_BUFFER, FALLBACK_IMAGE_TYPE, {
+        status,
+        cacheSeconds: ERROR_IMAGE_CACHE_SECONDS,
+      });
+    };
+
     if (!url) {
-      throw new HttpException(
-        'URL parameter is required',
-        HttpStatus.BAD_REQUEST,
-      );
+      sendFallbackImage(HttpStatus.BAD_REQUEST);
+      return;
     }
 
     try {
@@ -56,7 +79,8 @@ export class AppController {
 
       // Validate that it's an image URL (basic check)
       if (!imageUrl.match(/^https?:\/\//i)) {
-        throw new HttpException('Invalid URL format', HttpStatus.BAD_REQUEST);
+        sendFallbackImage(HttpStatus.BAD_REQUEST);
+        return;
       }
 
       // TikTok/Instagram CDNs often block requests without Referer and a browser User-Agent
@@ -96,7 +120,7 @@ export class AppController {
           maxRedirects: 5,
           decompress: true,
           headers,
-          validateStatus: (status) => status >= 200 && status < 300,
+          validateStatus: () => true,
         });
 
       const fetchWithRetry = async (headers: Record<string, string>) => {
@@ -110,19 +134,25 @@ export class AppController {
       const toBuffer = (data: unknown) =>
         Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
       const detectType = (headers: Record<string, unknown>, buffer: Buffer) => {
+        const bufferType = detectImageTypeFromBuffer(buffer);
+        if (bufferType) return bufferType;
+
+        const isTextLike = looksLikeText(buffer);
         const contentTypeHeader =
           (headers['content-type'] as string | undefined) || '';
         const contentType = contentTypeHeader
           .split(';')[0]
           ?.trim()
           .toLowerCase();
-        return (
-          (contentType && contentType.startsWith('image/')
-            ? contentType
-            : null) ||
-          detectImageTypeFromBuffer(buffer) ||
-          detectImageTypeFromUrl(imageUrl)
-        );
+        if (contentType && contentType.startsWith('image/') && !isTextLike) {
+          return contentType;
+        }
+
+        if (!isTextLike) {
+          return detectImageTypeFromUrl(imageUrl);
+        }
+
+        return null;
       };
 
       // Fetch with one retry (CDN can be flaky)
@@ -153,23 +183,20 @@ export class AppController {
       }
 
       if (!detectedType || buffer.length === 0) {
-        // CDN may return 200 with HTML/JSON error; don't cache or serve as image
-        throw new HttpException(
-          'Response is not an image',
-          HttpStatus.BAD_GATEWAY,
-        );
+        // CDN may return HTML/JSON errors; respond with an image to avoid ORB.
+        sendFallbackImage();
+        return;
       }
 
-      res.setHeader('Content-Type', detectedType);
-      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-
-      res.send(buffer);
+      sendImageResponse(buffer, detectedType);
+      return;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
+      }
+      if (!res.headersSent) {
+        sendFallbackImage();
+        return;
       }
       // Log the actual error for debugging
       const errorMessage =
@@ -181,6 +208,13 @@ export class AppController {
     }
   }
 }
+
+const DEFAULT_IMAGE_CACHE_SECONDS = 60 * 60 * 24;
+const ERROR_IMAGE_CACHE_SECONDS = 60;
+// 1x1 transparent GIF for error responses (prevents ORB on <img> loads)
+const FALLBACK_IMAGE_BASE64 = 'R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+const FALLBACK_IMAGE_BUFFER = Buffer.from(FALLBACK_IMAGE_BASE64, 'base64');
+const FALLBACK_IMAGE_TYPE = 'image/gif';
 
 function detectImageTypeFromUrl(imageUrl: string): string | null {
   const match = imageUrl.match(
@@ -246,10 +280,43 @@ function detectImageTypeFromBuffer(buffer: Buffer): string | null {
     }
   }
   // SVG: starts with <svg (allow BOM/whitespace)
-  const head = buffer.slice(0, 200).toString('utf8').trim().toLowerCase();
+  const head = buffer.slice(0, 512).toString('utf8').trim().toLowerCase();
   if (head.startsWith('<svg') || head.includes('<svg')) {
     return 'image/svg+xml';
   }
 
   return null;
+}
+
+function looksLikeText(buffer: Buffer): boolean {
+  if (!buffer.length) return false;
+  const sample = buffer.slice(0, 512);
+  let printable = 0;
+  for (const byte of sample) {
+    if (
+      byte === 9 || // \t
+      byte === 10 || // \n
+      byte === 13 || // \r
+      (byte >= 32 && byte <= 126)
+    ) {
+      printable += 1;
+    }
+  }
+
+  const printableRatio = printable / sample.length;
+  const text = sample.toString('utf8').trim().toLowerCase();
+  if (!text) return false;
+  if (
+    text.startsWith('<!doctype') ||
+    text.startsWith('<html') ||
+    text.startsWith('<head') ||
+    text.startsWith('<body') ||
+    text.startsWith('<script') ||
+    text.startsWith('{') ||
+    text.startsWith('[')
+  ) {
+    return true;
+  }
+
+  return printableRatio > 0.9;
 }

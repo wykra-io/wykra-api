@@ -185,8 +185,6 @@ export function App() {
             <Topbar
               isAuthed={isAuthed}
               me={me}
-              hideSignIn={isTelegramMiniApp()}
-              onOpenSignIn={() => setAuthModalOpen(true)}
               onLogout={() => void logout()}
             />
           </div>
@@ -285,7 +283,7 @@ export function App() {
         <div className="mainInner">
           {!isAuthed ? (
             <div className="authCard">
-              <h1 className="title">Welcome to Wykra</h1>
+              <h1 className="title">Log in to your Wykra account</h1>
               <p className="subtitle">Sign in to start.</p>
               {isTelegramMiniApp() ? null : (
                 <div className="actions">
