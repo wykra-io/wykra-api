@@ -6,18 +6,10 @@ import { WykraLogo } from './WykraLogo';
 type Props = {
   isAuthed: boolean;
   me: MeResponse | null;
-  onOpenSignIn: () => void;
   onLogout: () => void;
-  hideSignIn?: boolean;
 };
 
-export function Topbar({
-  isAuthed,
-  me,
-  onOpenSignIn,
-  onLogout,
-  hideSignIn,
-}: Props) {
+export function Topbar({ isAuthed, me, onLogout }: Props) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuWrapRef = useRef<HTMLDivElement>(null);
 
@@ -37,13 +29,7 @@ export function Topbar({
         <WykraLogo size={48} className="brandLogo" />
       </div>
       <div className="topbarRight">
-        {!isAuthed ? (
-          hideSignIn ? null : (
-            <button className="primaryBtn" onClick={onOpenSignIn}>
-              Sign in
-            </button>
-          )
-        ) : (
+        {!isAuthed ? null : (
           <div className="userMenuWrap" ref={userMenuWrapRef}>
             <button
               className="avatarButton"
