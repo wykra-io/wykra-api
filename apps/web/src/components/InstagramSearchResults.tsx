@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getApiBaseUrl } from '../api';
 
 type InstagramSearchResult = {
@@ -41,6 +41,50 @@ function getScoreColor(score: number): string {
   if (score >= 3) return '#3b82f6'; // blue
   if (score >= 2) return '#f59e0b'; // amber
   return '#ef4444'; // red
+}
+
+function InstagramProfileAvatar({
+  proxiedUrl,
+  originalUrl,
+  username,
+}: {
+  proxiedUrl: string | null;
+  originalUrl: string | null;
+  username: string;
+}) {
+  const [error, setError] = useState(false);
+  const [useOriginal, setUseOriginal] = useState(false);
+
+  useEffect(() => {
+    setError(false);
+    setUseOriginal(false);
+  }, [proxiedUrl, originalUrl]);
+
+  const preferredUrl = proxiedUrl ?? originalUrl ?? null;
+  const activeUrl = useOriginal ? originalUrl ?? proxiedUrl ?? null : preferredUrl;
+
+  if (!activeUrl || error) return null;
+
+  return (
+    <img
+      src={activeUrl}
+      alt={username}
+      onError={() => {
+        if (!useOriginal && proxiedUrl && originalUrl) {
+          setUseOriginal(true);
+          return;
+        }
+        setError(true);
+      }}
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: '50%',
+        objectFit: 'cover',
+        border: '1px solid #e2e8f0',
+      }}
+    />
+  );
 }
 
 export function InstagramSearchResults({ data }: Props) {
@@ -94,19 +138,11 @@ export function InstagramSearchResults({ data }: Props) {
               <div key={index} className="instagramSearchProfile">
                 <div className="instagramSearchProfileHeader">
                   <div className="instagramSearchProfileInfo">
-                    {proxiedImageUrl && (
-                      <img
-                        src={proxiedImageUrl}
-                        alt={username}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: '50%',
-                          objectFit: 'cover',
-                          border: '1px solid #e2e8f0',
-                        }}
-                      />
-                    )}
+                    <InstagramProfileAvatar
+                      proxiedUrl={proxiedImageUrl}
+                      originalUrl={profile.profileImageUrl ?? null}
+                      username={username}
+                    />
                     <a
                       href={profile.profileUrl}
                       target="_blank"

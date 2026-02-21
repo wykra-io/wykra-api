@@ -1,7 +1,6 @@
 import { WykraLogo } from './components/WykraLogo';
 import { Footer } from './components/Footer';
 import { NetworkBackdrop } from './components/NetworkBackdrop';
-import { NetworkIcon } from './components/NetworkIcon';
 
 export function App() {
   return (
@@ -17,18 +16,14 @@ export function App() {
       <main className="main">
         <div className="grid">
           <div>
-            <div className="pill">
-              <NetworkIcon className="netIcon" />
-              Search & analyze TikTok + Instagram influencers
-            </div>
-
             <h1 className="title">
               Find creators. Understand performance. Move faster.
             </h1>
 
             <p className="subtitle">
-              Wykra helps you discover and analyze TikTok and Instagram profiles.
-              Search with a prompt or analyze a username to get structured insights.
+              Wykra helps you discover and analyze TikTok and Instagram
+              profiles. Search with a prompt or analyze a username to get
+              structured insights.
             </p>
 
             <div className="actions">

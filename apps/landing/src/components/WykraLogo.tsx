@@ -1,3 +1,5 @@
+import React from 'react';
+
 type Props = {
   size?: number;
   title?: string;
@@ -19,5 +21,3 @@ export function WykraLogo({ size = 56, title = 'Wykra', className }: Props) {
     />
   );
 }
-
-
