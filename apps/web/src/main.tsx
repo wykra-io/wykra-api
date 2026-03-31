@@ -6,7 +6,7 @@ import { App } from './App';
 import './styles.css';
 
 initPlausible({
-  domain: 'https://app.wykra.io/',
+  domain: 'wykra.io',
   autoCapturePageviews: true,
   outboundLinks: true,
 });
