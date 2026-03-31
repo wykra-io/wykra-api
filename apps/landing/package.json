@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0 --port ${PORT:-4173}"
   },
   "dependencies": {
+    "@plausible-analytics/tracker": "^0.4.4",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
@@ -20,5 +21,3 @@
     "vite": "5.4.11"
   }
 }
-
-
